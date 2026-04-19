@@ -1,13 +1,6 @@
 name: Sync Labels
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "config/**"
-      - "scripts/sync-labels.mjs"
-      - ".github/workflows/sync-labels.yml"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -21,11 +14,9 @@ on:
         type: boolean
         default: false
       repositories:
-        description: "Optional comma-separated subset of configured repositories"
+        description: "Optional comma-separated subset of discovered repositories"
         required: false
         type: string
-  schedule:
-    - cron: "0 13 * * 1"
 
 jobs:
   sync:

@@ -1,12 +1,6 @@
 name: Validate Config
 
 on:
-  pull_request:
-    paths:
-      - "config/**"
-      - "scripts/sync-labels.mjs"
-      - ".github/workflows/validate-config.yml"
-      - ".github/workflows/sync-labels.yml"
   workflow_dispatch:
 
 jobs:

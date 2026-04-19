@@ -3,6 +3,7 @@ import path from "node:path";
 
 const workspaceRoot = process.cwd();
 const labelsPath = path.join(workspaceRoot, "config", "labels.json");
+const deleteLabelsPath = path.join(workspaceRoot, "config", "delete-labels.json");
 const repositoriesPath = path.join(workspaceRoot, "config", "repositories.json");
 
 const validateOnly = process.argv.includes("--validate-only");
@@ -90,6 +91,32 @@ function validateLabels(labels) {
       description: normalizeDescription(label.description),
     };
   });
+}
+
+function validateDeleteLabels(deleteLabels) {
+  assert(Array.isArray(deleteLabels), "config/delete-labels.json must contain an array.");
+
+  const seen = new Set();
+
+  return deleteLabels.map((entry, index) => {
+    assert(typeof entry === "string" && entry.trim(), `Delete label at index ${index} must be a non-empty string.`);
+
+    const name = entry.trim();
+    const key = normalizeName(name);
+    assert(!seen.has(key), `Duplicate delete label detected: "${name}".`);
+    seen.add(key);
+    return name;
+  });
+}
+
+function assertNoLabelOverlap(desiredLabels, deleteLabels) {
+  const desiredKeys = new Set(desiredLabels.map((label) => normalizeName(label.name)));
+  const overlaps = deleteLabels.filter((label) => desiredKeys.has(normalizeName(label)));
+
+  assert(
+    overlaps.length === 0,
+    `Labels cannot exist in both config/labels.json and config/delete-labels.json: ${overlaps.join(", ")}.`,
+  );
 }
 
 function validateRepositories(config) {
@@ -240,15 +267,17 @@ function summarizeLabelDiff(existing, desired) {
   return "update";
 }
 
-async function syncRepository(token, repository, desiredLabels, deleteMissing) {
+async function syncRepository(token, repository, desiredLabels, deleteLabels, deleteMissing) {
   console.log(`\nSyncing ${repository.full_name}`);
   const existingLabels = await getAllLabels(token, repository.full_name);
   const existingByName = new Map(existingLabels.map((label) => [normalizeName(label.name), label]));
   const desiredKeys = new Set(desiredLabels.map((label) => normalizeName(label.name)));
+  const deleteKeys = new Set(deleteLabels.map((label) => normalizeName(label)));
 
   let created = 0;
   let updated = 0;
-  let deleted = 0;
+  let deletedConfigured = 0;
+  let deletedMissing = 0;
   let unchanged = 0;
 
   for (const desired of desiredLabels) {
@@ -285,14 +314,33 @@ async function syncRepository(token, repository, desiredLabels, deleteMissing) {
     }
   }
 
+  for (const existing of existingLabels) {
+    if (!deleteKeys.has(normalizeName(existing.name))) {
+      continue;
+    }
+
+    deletedConfigured += 1;
+    console.log(`  - ${existing.name} (configured delete)`);
+
+    if (!dryRun) {
+      await githubRequest(
+        token,
+        "DELETE",
+        `/repos/${repository.full_name}/labels/${encodeURIComponent(existing.name)}`,
+      );
+    }
+  }
+
   if (deleteMissing) {
     for (const existing of existingLabels) {
-      if (desiredKeys.has(normalizeName(existing.name))) {
+      const existingKey = normalizeName(existing.name);
+
+      if (desiredKeys.has(existingKey) || deleteKeys.has(existingKey)) {
         continue;
       }
 
-      deleted += 1;
-      console.log(`  - ${existing.name}`);
+      deletedMissing += 1;
+      console.log(`  - ${existing.name} (delete missing)`);
 
       if (!dryRun) {
         await githubRequest(
@@ -304,14 +352,20 @@ async function syncRepository(token, repository, desiredLabels, deleteMissing) {
     }
   }
 
-  console.log(`Summary for ${repository.full_name}: created=${created}, updated=${updated}, deleted=${deleted}, unchanged=${unchanged}`);
+  console.log(
+    `Summary for ${repository.full_name}: created=${created}, updated=${updated}, deletedConfigured=${deletedConfigured}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
+  );
 }
 
 async function main() {
   const labels = validateLabels(await readJson(labelsPath));
+  const deleteLabels = validateDeleteLabels(await readJson(deleteLabelsPath));
+  assertNoLabelOverlap(labels, deleteLabels);
   const repositoryConfig = validateRepositories(await readJson(repositoriesPath));
 
-  console.log(`Loaded ${labels.length} labels and ${repositoryConfig.blacklist.size} blacklist entries.`);
+  console.log(
+    `Loaded ${labels.length} managed labels, ${deleteLabels.length} auto-delete labels, and ${repositoryConfig.blacklist.size} blacklist entries.`,
+  );
 
   if (validateOnly) {
     console.log("Configuration is valid.");
@@ -341,7 +395,7 @@ async function main() {
   const deleteMissing = deleteMissingOverride ?? repositoryConfig.deleteMissing;
 
   for (const repository of repositories) {
-    await syncRepository(token, repository, labels, deleteMissing);
+    await syncRepository(token, repository, labels, deleteLabels, deleteMissing);
   }
 }
 
