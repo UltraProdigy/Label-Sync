@@ -1,4 +1,4 @@
-name: Sync Labels
+name: Org-Label-Sync
 
 on:
   workflow_dispatch:
@@ -18,26 +18,37 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+
 jobs:
-  sync:
+  refresh-config:
+    uses: ./.github/workflows/config-label-sync.yml
+    secrets: inherit
+
+  sync-org:
+    needs: refresh-config
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
 
     steps:
-      - name: Check out repository
+      - name: Check out latest default branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Sync labels
+      - name: Validate updated config
+        run: node scripts/sync-labels.mjs --validate-only
+
+      - name: Sync labels across the organization
         env:
           LABEL_SYNC_TOKEN: ${{ secrets.LABEL_SYNC_TOKEN }}
           ORG_NAME: ${{ github.repository_owner }}
-          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
-          DELETE_MISSING: ${{ github.event_name == 'workflow_dispatch' && inputs.delete_missing || 'false' }}
-          TARGET_REPOSITORIES: ${{ github.event_name == 'workflow_dispatch' && inputs.repositories || '' }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          DELETE_MISSING: ${{ inputs.delete_missing }}
+          TARGET_REPOSITORIES: ${{ inputs.repositories }}
         run: node scripts/sync-labels.mjs

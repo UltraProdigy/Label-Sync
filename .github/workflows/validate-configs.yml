@@ -1,7 +1,12 @@
-name: Validate Config
+name: Validate-Configs
 
 on:
-  workflow_dispatch:
+  push:
+    paths:
+      - "config/**"
+  pull_request:
+    paths:
+      - "config/**"
 
 jobs:
   validate:
