@@ -1,0 +1,52 @@
+name: Sync Labels
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "config/**"
+      - "scripts/sync-labels.mjs"
+      - ".github/workflows/sync-labels.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview label changes without applying them"
+        required: false
+        type: boolean
+        default: true
+      delete_missing:
+        description: "Delete labels that are not present in config"
+        required: false
+        type: boolean
+        default: false
+      repositories:
+        description: "Optional comma-separated subset of configured repositories"
+        required: false
+        type: string
+  schedule:
+    - cron: "0 13 * * 1"
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Sync labels
+        env:
+          LABEL_SYNC_TOKEN: ${{ secrets.LABEL_SYNC_TOKEN }}
+          ORG_NAME: ${{ github.repository_owner }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          DELETE_MISSING: ${{ github.event_name == 'workflow_dispatch' && inputs.delete_missing || 'false' }}
+          TARGET_REPOSITORIES: ${{ github.event_name == 'workflow_dispatch' && inputs.repositories || '' }}
+        run: node scripts/sync-labels.mjs
