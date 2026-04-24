@@ -1,5 +1,6 @@
 import path from "node:path";
 import { assert, normalizeName, normalizeRepositoryRef, readJsonc } from "./lib/config-utils.mjs";
+import { validateProperties, validateRepositoryFilter } from "./lib/config-validation.mjs";
 
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
@@ -18,68 +19,6 @@ function parseBoolean(value) {
   }
 
   return value.toLowerCase() === "true";
-}
-
-function isFullRepositoryName(value) {
-  return /^[^/\s]+\/[^/\s]+$/.test(value);
-}
-
-function isRepositoryName(value) {
-  return /^[^/\s]+$/.test(value);
-}
-
-function validateProperties(properties) {
-  assert(properties && typeof properties === "object" && !Array.isArray(properties), "config/properties.jsonc must contain an object.");
-  assert(
-    typeof properties.organization === "string" && properties.organization.trim(),
-    "properties.organization must be a non-empty string.",
-  );
-  assert(
-    typeof properties.labelSyncTokenSecretName === "string" && /^[A-Z_][A-Z0-9_]*$/.test(properties.labelSyncTokenSecretName),
-    "properties.labelSyncTokenSecretName must look like a GitHub secret name.",
-  );
-
-  return {
-    organization: properties.organization.trim(),
-    labelSyncTokenSecretName: properties.labelSyncTokenSecretName.trim(),
-  };
-}
-
-function validateRepositoryEntries(entries, configKey) {
-  assert(Array.isArray(entries), `config/repository-filter.jsonc field "${configKey}" must contain an array.`);
-  const seen = new Set();
-
-  return new Set(entries.map((entry, index) => {
-    assert(typeof entry === "string" && entry.trim(), `"${configKey}" entry at index ${index} must be a non-empty string.`);
-
-    const name = entry.trim();
-    assert(
-      isRepositoryName(name) || isFullRepositoryName(name),
-      `"${configKey}" entry "${name}" must be either "repo-name" or "owner/repo-name".`,
-    );
-
-    const key = normalizeRepositoryRef(name);
-    assert(!seen.has(key), `Duplicate "${configKey}" entry detected: "${name}".`);
-    seen.add(key);
-    return key;
-  }));
-}
-
-function validateRepositoryFilter(repositoryFilter) {
-  assert(
-    repositoryFilter && typeof repositoryFilter === "object" && !Array.isArray(repositoryFilter),
-    "config/repository-filter.jsonc must contain an object.",
-  );
-
-  if (repositoryFilter.useWhitelist !== undefined) {
-    assert(typeof repositoryFilter.useWhitelist === "boolean", 'config/repository-filter.jsonc field "useWhitelist" must be a boolean.');
-  }
-
-  return {
-    useWhitelist: repositoryFilter.useWhitelist ?? false,
-    whitelist: validateRepositoryEntries(repositoryFilter.whitelist ?? [], "whitelist"),
-    blacklist: validateRepositoryEntries(repositoryFilter.blacklist ?? [], "blacklist"),
-  };
 }
 
 function validateRunInputs() {
@@ -249,7 +188,10 @@ async function processRepository(token, repository, requestedLabel) {
 }
 
 async function main() {
-  const properties = validateProperties(await readJsonc(propertiesPath));
+  const properties = validateProperties(await readJsonc(propertiesPath), {
+    requireOrganization: true,
+    requireLabelSyncTokenSecretName: true,
+  });
   const repositoryFilter = validateRepositoryFilter(await readJsonc(repositoryFilterPath));
   const activeFilterCount = repositoryFilter.useWhitelist ? repositoryFilter.whitelist.size : repositoryFilter.blacklist.size;
   const activeFilterMode = repositoryFilter.useWhitelist ? "whitelist" : "blacklist";

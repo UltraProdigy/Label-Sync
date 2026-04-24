@@ -185,7 +185,7 @@ Trigger:
 What it does:
 
 1. Checks out the repo
-2. Runs `node scripts/sync-labels.mjs --validate-only`
+2. Runs `node scripts/validate-configs.mjs`
 
 Validation includes:
 

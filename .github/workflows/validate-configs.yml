@@ -21,8 +21,5 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Validate label sync configuration
-        run: node scripts/sync-labels.mjs --validate-only
-
-      - name: Validate remove-labels configuration
-        run: node scripts/remove-labels.mjs --validate-only
+      - name: Validate configuration
+        run: node scripts/validate-configs.mjs

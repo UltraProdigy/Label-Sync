@@ -7,43 +7,12 @@ import {
   readJsonc,
   writeJsoncPreservingHeader,
 } from "./lib/config-utils.mjs";
+import { validateDeleteLabels, validateProperties } from "./lib/config-validation.mjs";
 
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
 const labelsPath = path.join(workspaceRoot, "config", "labels.jsonc");
 const autoPrunedLabelsPath = path.join(workspaceRoot, "config", "auto-pruned-labels.jsonc");
-
-function validateProperties(properties) {
-  assert(properties && typeof properties === "object" && !Array.isArray(properties), "config/properties.jsonc must contain an object.");
-
-  if (properties.sourceRepository !== undefined) {
-    assert(
-      typeof properties.sourceRepository === "string" && /^[^/\s]+\/[^/\s]+$/.test(properties.sourceRepository.trim()),
-      "properties.sourceRepository must match owner/repo when provided.",
-    );
-  }
-
-  return {
-    sourceRepository: (properties.sourceRepository ?? process.env.GITHUB_REPOSITORY ?? "").trim(),
-  };
-}
-
-function validateDeleteLabels(deleteLabels) {
-  assert(Array.isArray(deleteLabels), "config/auto-pruned-labels.jsonc must contain an array.");
-
-  const seen = new Set();
-
-  return new Set(
-    deleteLabels.map((entry, index) => {
-      assert(typeof entry === "string" && entry.trim(), `Delete label at index ${index} must be a non-empty string.`);
-
-      const name = normalizeName(entry);
-      assert(!seen.has(name), `Duplicate delete label detected: "${entry}".`);
-      seen.add(name);
-      return name;
-    }),
-  );
-}
 
 async function githubRequest(token, method, apiPath) {
   const response = await fetch(`https://api.github.com${apiPath}`, {
@@ -95,11 +64,16 @@ async function main() {
   const token = process.env.CONFIG_LABEL_SYNC_TOKEN ?? process.env.GITHUB_TOKEN;
   assert(token, "CONFIG_LABEL_SYNC_TOKEN or GITHUB_TOKEN is required.");
 
-  const properties = validateProperties(await readJsonc(propertiesPath));
+  const properties = validateProperties(await readJsonc(propertiesPath), {
+    includeSourceRepository: true,
+    defaultSourceRepository: process.env.GITHUB_REPOSITORY ?? "",
+  });
   const repository = process.env.SOURCE_REPOSITORY ?? properties.sourceRepository;
   assert(repository, "SOURCE_REPOSITORY or GITHUB_REPOSITORY is required.");
 
-  const deleteLabels = validateDeleteLabels(await readJsonc(autoPrunedLabelsPath));
+  const deleteLabels = new Set(
+    validateDeleteLabels(await readJsonc(autoPrunedLabelsPath)).map((entry) => normalizeName(entry)),
+  );
   const repositoryLabels = await getAllLabels(token, repository);
   const managedLabels = toManagedLabels(repositoryLabels, deleteLabels);
 
