@@ -1,4 +1,4 @@
-name: remove-labels
+name: Remove-Labels
 
 on:
   workflow_dispatch:

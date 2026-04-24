@@ -16,7 +16,7 @@ This repo uses four workflows:
 1. `Config-Label_Sync`
 2. `Validate-Configs`
 3. `Org-Label-Sync`
-4. `remove-labels`
+4. `Remove-Labels`
 
 The normal flow is:
 
@@ -197,7 +197,7 @@ Validation includes:
 - invalid colors
 - invalid repo names
 - overlap detection between `labels.jsonc` and `auto-pruned-labels.jsonc`
-- validation for the shared config used by `remove-labels`
+- validation for the shared config used by `Remove-Labels`
 
 ### `Org-Label-Sync`
 
@@ -225,7 +225,7 @@ What it does:
 8. Deletes labels listed in `config/auto-pruned-labels.jsonc`
 9. Optionally deletes any other unmanaged labels if `delete_missing` or `deleteMissingByDefault` is enabled
 
-### `remove-labels`
+### `Remove-Labels`
 
 File: `.github/workflows/remove-labels.yml`
 
