@@ -4,9 +4,13 @@ on:
   push:
     paths:
       - "config/**"
+      - "scripts/**"
+      - ".github/workflows/**"
   pull_request:
     paths:
       - "config/**"
+      - "scripts/**"
+      - ".github/workflows/**"
 
 jobs:
   validate:

@@ -1,6 +1,8 @@
 import path from "node:path";
 import {
   assert,
+  normalizeColor,
+  normalizeDescription,
   normalizeName,
   normalizeRepositoryRef,
   readJsonc,
