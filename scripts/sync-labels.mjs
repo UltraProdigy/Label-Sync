@@ -14,6 +14,7 @@ import {
   validateProperties,
   validateRepositoryFilter,
 } from "./lib/config-validation.mjs";
+import { renderLabelSyncSection, writeChangelog } from "./lib/changelog-utils.mjs";
 
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
@@ -176,6 +177,14 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
   const existingByName = new Map(existingLabels.map((label) => [normalizeName(label.name), label]));
   const desiredKeys = new Set(desiredLabels.map((label) => normalizeName(label.name)));
   const deleteKeys = new Set(deleteLabels.map((label) => normalizeName(label)));
+  const result = {
+    repository: repository.full_name,
+    createdLabels: [],
+    updatedLabels: [],
+    deletedConfiguredLabels: [],
+    deletedMissingLabels: [],
+    hasChanges: false,
+  };
 
   let created = 0;
   let updated = 0;
@@ -195,6 +204,8 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
 
     if (action === "create") {
       created += 1;
+      result.createdLabels.push(desired);
+      result.hasChanges = true;
       console.log(`  + ${desired.name}`);
 
       if (!dryRun) {
@@ -205,6 +216,15 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
     }
 
     updated += 1;
+    result.updatedLabels.push({
+      before: {
+        name: existing.name,
+        color: normalizeColor(existing.color),
+        description: normalizeDescription(existing.description),
+      },
+      after: desired,
+    });
+    result.hasChanges = true;
     console.log(`  ~ ${desired.name}`);
 
     if (!dryRun) {
@@ -223,6 +243,12 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
     }
 
     deletedConfigured += 1;
+    result.deletedConfiguredLabels.push({
+      name: existing.name,
+      color: normalizeColor(existing.color),
+      description: normalizeDescription(existing.description),
+    });
+    result.hasChanges = true;
     console.log(`  - ${existing.name} (configured delete)`);
 
     if (!dryRun) {
@@ -243,6 +269,12 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
       }
 
       deletedMissing += 1;
+      result.deletedMissingLabels.push({
+        name: existing.name,
+        color: normalizeColor(existing.color),
+        description: normalizeDescription(existing.description),
+      });
+      result.hasChanges = true;
       console.log(`  - ${existing.name} (delete missing)`);
 
       if (!dryRun) {
@@ -258,6 +290,8 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
   console.log(
     `Summary for ${repository.full_name}: created=${created}, updated=${updated}, deletedConfigured=${deletedConfigured}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
   );
+
+  return result;
 }
 
 async function main() {
@@ -304,10 +338,27 @@ async function main() {
 
   console.log(dryRun ? "Running in dry-run mode." : "Applying changes.");
   const deleteMissing = deleteMissingOverride ?? properties.deleteMissingByDefault;
+  const results = [];
 
   for (const repository of repositories) {
-    await syncRepository(token, repository, labels, deleteLabels, deleteMissing);
+    const result = await syncRepository(token, repository, labels, deleteLabels, deleteMissing);
+    results.push(result);
   }
+
+  if (!dryRun) {
+    await writeChangelog({
+      workflowName: "Org-Label-Sync",
+      introLines: [
+        `Repository filter mode: ${activeFilterMode}`,
+        `Processed repositories: ${repositories.length}`,
+        `Delete missing labels: ${deleteMissing}`,
+      ],
+      sections: results.map(renderLabelSyncSection),
+    });
+    return;
+  }
+
+  console.log("Dry-run mode does not write changelogs because no repository changes were applied.");
 }
 
 main().catch((error) => {

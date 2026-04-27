@@ -1,6 +1,7 @@
 import path from "node:path";
 import { assert, normalizeName, normalizeRepositoryRef, readJsonc } from "./lib/config-utils.mjs";
 import { validateProperties, validateRepositoryFilter } from "./lib/config-validation.mjs";
+import { renderRemoveLabelsSection, writeChangelog } from "./lib/changelog-utils.mjs";
 
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
@@ -133,7 +134,7 @@ async function processIssues(token, repository, requestedLabel) {
   const state = targetOnlyClosedIssues ? "closed" : "all";
   const candidates = await getLabelledIssues(token, repository.full_name, state, requestedLabel);
   const issues = candidates.filter((item) => !item.pull_request);
-  let removed = 0;
+  const removed = [];
 
   for (const issue of issues) {
     const matchingLabel = findMatchingLabel(issue, requestedLabel);
@@ -143,7 +144,11 @@ async function processIssues(token, repository, requestedLabel) {
     }
 
     await removeLabelFromIssue(token, repository.full_name, issue.number, matchingLabel.name);
-    removed += 1;
+    removed.push({
+      number: issue.number,
+      label: matchingLabel.name,
+      url: issue.html_url,
+    });
     console.log(`  Removed "${matchingLabel.name}" from issue #${issue.number}`);
   }
 
@@ -154,7 +159,7 @@ async function processPullRequests(token, repository, requestedLabel) {
   const state = targetOnlyClosedPullRequests ? "closed" : "all";
   const candidates = await getLabelledIssues(token, repository.full_name, state, requestedLabel);
   const pullRequests = candidates.filter((item) => item.pull_request);
-  let removed = 0;
+  const removed = [];
 
   for (const pullRequest of pullRequests) {
     const matchingLabel = findMatchingLabel(pullRequest, requestedLabel);
@@ -164,7 +169,11 @@ async function processPullRequests(token, repository, requestedLabel) {
     }
 
     await removeLabelFromIssue(token, repository.full_name, pullRequest.number, matchingLabel.name);
-    removed += 1;
+    removed.push({
+      number: pullRequest.number,
+      label: matchingLabel.name,
+      url: pullRequest.html_url,
+    });
     console.log(`  Removed "${matchingLabel.name}" from pull request #${pullRequest.number}`);
   }
 
@@ -174,14 +183,15 @@ async function processPullRequests(token, repository, requestedLabel) {
 async function processRepository(token, repository, requestedLabel) {
   console.log(`\nProcessing ${repository.full_name}`);
 
-  const removedIssues = runOnIssues ? await processIssues(token, repository, requestedLabel) : 0;
-  const removedPullRequests = runOnPullRequests ? await processPullRequests(token, repository, requestedLabel) : 0;
+  const removedIssues = runOnIssues ? await processIssues(token, repository, requestedLabel) : [];
+  const removedPullRequests = runOnPullRequests ? await processPullRequests(token, repository, requestedLabel) : [];
 
   console.log(
-    `Summary for ${repository.full_name}: removedFromIssues=${removedIssues}, removedFromPullRequests=${removedPullRequests}`,
+    `Summary for ${repository.full_name}: removedFromIssues=${removedIssues.length}, removedFromPullRequests=${removedPullRequests.length}`,
   );
 
   return {
+    repository: repository.full_name,
     removedIssues,
     removedPullRequests,
   };
@@ -228,16 +238,30 @@ async function main() {
 
   let totalRemovedIssues = 0;
   let totalRemovedPullRequests = 0;
+  const results = [];
 
   for (const repository of repositories) {
     const result = await processRepository(token, repository, labelName);
-    totalRemovedIssues += result.removedIssues;
-    totalRemovedPullRequests += result.removedPullRequests;
+    results.push(result);
+    totalRemovedIssues += result.removedIssues.length;
+    totalRemovedPullRequests += result.removedPullRequests.length;
   }
 
   console.log(
     `Completed label removal. Total removed from issues=${totalRemovedIssues}, total removed from pull requests=${totalRemovedPullRequests}.`,
   );
+
+  await writeChangelog({
+    workflowName: "Remove-Labels",
+    introLines: [
+      `Repository filter mode: ${activeFilterMode}`,
+      `Processed repositories: ${repositories.length}`,
+      `Requested label: ${labelName}`,
+      `Issue scope: ${runOnIssues ? (targetOnlyClosedIssues ? "closed issues only" : "all issues") : "disabled"}`,
+      `Pull request scope: ${runOnPullRequests ? (targetOnlyClosedPullRequests ? "closed pull requests only" : "all pull requests") : "disabled"}`,
+    ],
+    sections: results.map(renderRemoveLabelsSection),
+  });
 }
 
 main().catch((error) => {

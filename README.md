@@ -8,6 +8,7 @@ Its job is to:
 - validate config changes automatically
 - sync the resulting label set across the rest of the organization
 - remove an exact label from issues and pull requests across the filtered repository set
+- write run-level changelogs for each workflow run that actually changes another repository
 
 ## How It Works
 
@@ -42,11 +43,16 @@ The normal flow is:
 |   |-- labels.jsonc
 |   |-- properties.jsonc
 |   `-- repository-filter.jsonc
+|-- changelogs/
+|   `-- YYYY-MM-DD/
+|       `-- workflow-run-changelog.md
 `-- scripts/
     |-- export-properties.mjs
+    |-- remove-labels.mjs
     |-- sync-config-labels.mjs
     |-- sync-labels.mjs
     `-- lib/
+        |-- changelog-utils.mjs
         `-- config-utils.mjs
 ```
 
@@ -224,6 +230,7 @@ What it does:
 7. Creates or updates labels from `config/labels.jsonc`
 8. Deletes labels listed in `config/auto-pruned-labels.jsonc`
 9. Optionally deletes any other unmanaged labels if `delete_missing` or `deleteMissingByDefault` is enabled
+10. If the run is not a dry run and at least one target repo changed, writes a changelog under `changelogs/YYYY-MM-DD/` and commits it with `[skip ci]`
 
 ### `Remove-Labels`
 
@@ -249,6 +256,27 @@ What it does:
 4. Discovers repositories in the configured organization
 5. Applies `config/repository-filter.jsonc` in whitelist or blacklist mode
 6. Removes the exact label from the selected issues and/or pull requests in every remaining repository
+7. If at least one target repo changed, writes a changelog under `changelogs/YYYY-MM-DD/` and commits it with `[skip ci]`
+
+## Changelogs
+
+Applied changes to other repositories are documented in `changelogs/`.
+
+Each changelog file is created only when a workflow actually changes at least one filtered target repository. Repositories that were included by the whitelist or not excluded by the blacklist, but had nothing to change, are not listed.
+
+`Org-Label-Sync` changelogs include:
+
+- created labels
+- updated labels, including changed fields
+- configured auto-pruned labels that were deleted
+- unmanaged labels that were deleted when delete-missing is enabled
+
+`Remove-Labels` changelogs include:
+
+- each issue the label was removed from
+- each pull request the label was removed from
+
+Changelog commits use the configured full-access token and include `[skip ci]` in the commit message so they do not trigger normal workflow/check runs.
 
 Notes:
 
@@ -263,7 +291,9 @@ That token needs enough access to:
 - read and update labels on the source repository
 - discover repositories in the organization
 - read and update labels on target repositories
+- read and update issues and pull requests when running `Remove-Labels`
 - push config updates back to this repository when `Config-Label_Sync` changes `labels.jsonc`
+- push changelog commits back to this repository when an action changes another repository
 
 ## Setup
 
