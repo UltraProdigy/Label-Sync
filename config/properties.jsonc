@@ -18,22 +18,22 @@
 {
   "organization": "UltraProdigy",
   "authentication": {
-    # The authentication mode to use for accessing the GitHub API. You can choose between "pat" (Personal Access Token) or "githubApp" (GitHub App). Depending on the mode you choose, you will need to provide the corresponding secrets as described below.
+    // The authentication mode to use for accessing the GitHub API. You can choose between "pat" (Personal Access Token) or "githubApp" (GitHub App). Depending on the mode you choose, you will need to provide the corresponding secrets as described below.
     "mode": "pat",
     "pat": {
-      # This is the name of the secret that contains the GitHub PAT token. You should create this secret in your repository and set its value to a valid PAT token with appropriate permissions.
+      // This is the name of the secret that contains the GitHub PAT token. You should create this secret in your repository and set its value to a valid PAT token with appropriate permissions.
       "tokenSecretName": "LABEL_SYNC_TOKEN"
     },
     "githubApp": {
-      # This is the name of the secret that contains the GitHub App ID. You should create this secret in your repository and set its value to a valid GitHub App ID.
+      // This is the name of the secret that contains the GitHub App ID. You should create this secret in your repository and set its value to a valid GitHub App ID.
       "appIdSecretName": "LABEL_SYNC_APP_ID",
-      # This is the name of the secret that contains the GitHub App private key. You should create this secret in your repository and set its value to the private key of your GitHub App.
+      // This is the name of the secret that contains the GitHub App private key. You should create this secret in your repository and set its value to the private key of your GitHub App.
       "privateKeySecretName": "LABEL_SYNC_APP_PRIVATE_KEY",
-      # This is the name of the secret that contains the GitHub App installation ID. You should create this secret in your repository and set its value to the installation ID of your GitHub App.
+      // This is the name of the secret that contains the GitHub App installation ID. You should create this secret in your repository and set its value to the installation ID of your GitHub App.
       "installationIdSecretName": "LABEL_SYNC_APP_INSTALLATION_ID"
     }
   },
   "sourceRepository": "UltraProdigy/Label-Sync",
-  # This setting determines whether labels that are present in the target repositories but missing from the source repository should be deleted by default. If set to true, such labels will be automatically deleted during synchronization. If set to false, they will be retained unless explicitly removed.
+  // This setting determines whether labels that are present in the target repositories but missing from the source repository should be deleted by default. If set to true, such labels will be automatically deleted during synchronization. If set to false, they will be retained unless explicitly removed.
   "deleteMissingByDefault": false
 }

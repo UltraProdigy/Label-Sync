@@ -7,14 +7,14 @@ on:
         description: "Preview label changes without applying them"
         required: false
         type: boolean
-        default: true
+        default: false
       delete_missing:
         description: "Delete labels that are not present in config"
         required: false
         type: boolean
         default: false
       repositories:
-        description: "Optional comma-separated subset of repositories after repository-filter rules are applied"
+        description: "Config Override: Run workflow on this set of repositories exclusively. (Type name(s), separated by comma)"
         required: false
         type: string
 
@@ -77,15 +77,21 @@ jobs:
         run: node scripts/sync-labels.mjs
 
       - name: Commit changelog
-        if: ${{ !inputs.dry_run }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -z "$(git status --porcelain -- changelogs)" ]; then
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            changelog_path="fake-changelogs"
+            commit_message="Add Org-Label-Sync fake changelog [skip ci]"
+          else
+            changelog_path="changelogs"
+            commit_message="Add Org-Label-Sync changelog [skip ci]"
+          fi
+          if [ -z "$(git status --porcelain -- "$changelog_path")" ]; then
             echo "No changelog changes detected."
             exit 0
           fi
-          git add changelogs
-          git commit -m "Add Org-Label-Sync changelog [skip ci]"
+          git add "$changelog_path"
+          git commit -m "$commit_message"
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git"
           git push origin "HEAD:${{ github.event.repository.default_branch }}"

@@ -8,7 +8,7 @@ Its job is to:
 - validate config changes automatically
 - sync the resulting label set across the rest of the organization
 - remove an exact label from issues and pull requests across the filtered repository set
-- write run-level changelogs for each workflow run that actually changes another repository
+- write run-level changelogs for each workflow run that actually changes another repository, plus fake changelogs for previewed org-label-sync changes
 
 ## How It Works
 
@@ -53,6 +53,9 @@ The reverse flow is:
 |   |-- properties.jsonc
 |   `-- repository-filter.jsonc
 |-- changelogs/
+|   `-- YYYY-MM-DD/
+|       `-- workflow-run-changelog.md
+|-- fake-changelogs/
 |   `-- YYYY-MM-DD/
 |       `-- workflow-run-changelog.md
 `-- scripts/
@@ -277,9 +280,9 @@ Trigger:
 
 Inputs:
 
-- `dry_run`: preview changes without writing them
+- `dry_run`: preview changes without applying repository label changes; when previewed changes exist, writes a fake changelog under `fake-changelogs/`
 - `delete_missing`: override `deleteMissingByDefault` for the run
-- `repositories`: optional comma-separated subset of repositories after `repository-filter.jsonc` is applied
+- `repositories`: comma-separated config override that runs exclusively on those repositories and ignores `repository-filter.jsonc`
 
 What it does:
 
@@ -289,11 +292,11 @@ What it does:
 4. Resolves either the configured PAT or a GitHub App installation token
 5. Validates the updated config
 6. Discovers repos in the configured organization
-7. Applies `config/repository-filter.jsonc`
+7. Applies `config/repository-filter.jsonc`, unless `repositories` was provided as a workflow dispatch config override
 8. Creates or updates labels from `config/labels.jsonc`
 9. Deletes labels that exactly match entries in `config/auto-pruned-labels.jsonc` unless that label name is managed by `config/labels.jsonc`
 10. Optionally deletes any other unmanaged labels if `delete_missing` or `deleteMissingByDefault` is enabled
-11. If the run is not a dry run and at least one target repo changed, writes a changelog under `changelogs/YYYY-MM-DD/` and commits it with `[skip ci]`
+11. If at least one target repo changed or would change, writes a changelog and commits it with `[skip ci]`; real runs write to `changelogs/YYYY-MM-DD/`, while preview runs write fake changelogs to `fake-changelogs/YYYY-MM-DD/` and do not apply repository changes
 
 ### `Remove-Labels`
 
@@ -324,9 +327,9 @@ What it does:
 
 ## Changelogs
 
-Applied changes to other repositories are documented in `changelogs/`.
+Applied changes to other repositories are documented in `changelogs/`. Previewed org-label-sync changes are documented in `fake-changelogs/`.
 
-Each changelog file is created only when a workflow actually changes at least one filtered target repository. Repositories that were included by the whitelist or not excluded by the blacklist, but had nothing to change, are not listed.
+Each changelog file is created only when a workflow actually changes, or in preview mode would change, at least one target repository. Repositories that were selected but had nothing to change are not listed.
 
 `Org-Label-Sync` changelogs include:
 

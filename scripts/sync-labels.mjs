@@ -128,7 +128,7 @@ function filterRepositories(repositories, orgName, repositoryFilter) {
     .sort((left, right) => left.full_name.localeCompare(right.full_name));
 }
 
-function applyTargetRepositoryFilter(repositories) {
+function applyTargetRepositoryOverride(repositories) {
   if (!targetRepositoryFilter) {
     return repositories;
   }
@@ -136,23 +136,29 @@ function applyTargetRepositoryFilter(repositories) {
   const selected = repositories.filter((repository) => {
     const shortName = normalizeRepositoryRef(repository.name);
     const fullName = normalizeRepositoryRef(repository.full_name);
-    return targetRepositoryFilter.has(shortName) || targetRepositoryFilter.has(fullName);
+    const orgScopedName = normalizeRepositoryRef(`${repository.owner?.login ?? ""}/${repository.name}`);
+    return (
+      targetRepositoryFilter.has(shortName)
+      || targetRepositoryFilter.has(fullName)
+      || targetRepositoryFilter.has(orgScopedName)
+    );
   });
 
   const available = new Set(
     repositories.flatMap((repository) => [
       normalizeRepositoryRef(repository.name),
       normalizeRepositoryRef(repository.full_name),
+      normalizeRepositoryRef(`${repository.owner?.login ?? ""}/${repository.name}`),
     ]),
   );
   const missing = [...targetRepositoryFilter].filter((entry) => !available.has(entry));
 
   assert(
     missing.length === 0,
-    `Requested repositories were not found in the discovered org repository set after repository-filter processing: ${missing.join(", ")}.`,
+    `Requested repositories were not found in the discovered org repository set: ${missing.join(", ")}.`,
   );
 
-  return selected;
+  return selected.sort((left, right) => left.full_name.localeCompare(right.full_name));
 }
 
 function summarizeLabelDiff(existing, desired) {
@@ -327,16 +333,27 @@ async function main() {
   assert(orgName, "ORG_NAME, GITHUB_REPOSITORY_OWNER, or properties.organization is required to discover organization repositories.");
 
   const discoveredRepositories = await getOrganizationRepositories(token, orgName);
-  const repositories = applyTargetRepositoryFilter(
-    filterRepositories(discoveredRepositories, orgName, repositoryFilter),
-  );
+  const usingTargetRepositoryOverride = targetRepositoryFilter !== null;
+  const repositories = usingTargetRepositoryOverride
+    ? applyTargetRepositoryOverride(discoveredRepositories)
+    : filterRepositories(discoveredRepositories, orgName, repositoryFilter);
 
-  console.log(
-    `Discovered ${discoveredRepositories.length} repositories in ${orgName}; ${repositories.length} remain after repository-filter processing.`,
-  );
+  if (usingTargetRepositoryOverride) {
+    console.log(
+      `Discovered ${discoveredRepositories.length} repositories in ${orgName}; ${repositories.length} selected by workflow repository override.`,
+    );
+  } else {
+    console.log(
+      `Discovered ${discoveredRepositories.length} repositories in ${orgName}; ${repositories.length} remain after repository-filter processing.`,
+    );
+  }
 
   if (repositories.length === 0) {
-    console.log("No repositories remain after repository-filter processing and optional subset filtering. Nothing to sync.");
+    console.log(
+      usingTargetRepositoryOverride
+        ? "No repositories were selected by the workflow repository override. Nothing to sync."
+        : "No repositories remain after repository-filter processing. Nothing to sync.",
+    );
     return;
   }
 
@@ -349,20 +366,19 @@ async function main() {
     results.push(result);
   }
 
-  if (!dryRun) {
-    await writeChangelog({
-      workflowName: "Org-Label-Sync",
-      introLines: [
-        `Repository filter mode: ${activeFilterMode}`,
-        `Processed repositories: ${repositories.length}`,
-        `Delete missing labels: ${deleteMissing}`,
-      ],
-      sections: results.map(renderLabelSyncSection),
-    });
-    return;
-  }
-
-  console.log("Dry-run mode does not write changelogs because no repository changes were applied.");
+  await writeChangelog({
+    workflowName: dryRun ? "Org-Label-Sync Fake" : "Org-Label-Sync",
+    directoryName: dryRun ? "fake-changelogs" : "changelogs",
+    introLines: [
+      dryRun ? "Preview mode: true; no label changes were applied" : null,
+      usingTargetRepositoryOverride
+        ? "Repository selection: workflow dispatch config override"
+        : `Repository filter mode: ${activeFilterMode}`,
+      `Processed repositories: ${repositories.length}`,
+      `Delete missing labels: ${deleteMissing}`,
+    ].filter((line) => line !== null),
+    sections: results.map(renderLabelSyncSection),
+  });
 }
 
 main().catch((error) => {

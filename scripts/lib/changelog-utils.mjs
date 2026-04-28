@@ -43,11 +43,11 @@ export function getWorkflowMetadata(workflowName) {
   };
 }
 
-export async function writeChangelog({ workflowName, introLines, sections }) {
+export async function writeChangelog({ workflowName, introLines, sections, directoryName = "changelogs" }) {
   const changedSections = sections.filter((section) => section.hasChanges);
 
   if (changedSections.length === 0) {
-    console.log("No applied changes detected; changelog was not written.");
+    console.log("No repository changes detected; changelog was not written.");
     return null;
   }
 
@@ -57,7 +57,7 @@ export async function writeChangelog({ workflowName, introLines, sections }) {
   const timestamp = formatUtcTimestamp(now);
   const runId = metadata.runId || `${Date.now()}`;
   const fileName = `${timestamp.replace(/[:]/g, "").replace(/Z$/, "z")}-${slugify(workflowName)}-${runId}.md`;
-  const changelogDir = path.join(process.cwd(), "changelogs", datePath);
+  const changelogDir = path.join(process.cwd(), directoryName, datePath);
   const changelogPath = path.join(changelogDir, fileName);
 
   const lines = [
