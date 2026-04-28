@@ -14,12 +14,36 @@ export function normalizeDescription(description) {
   return description ?? "";
 }
 
+export function normalizeLabelSpec(label) {
+  return {
+    name: label.name.trim(),
+    color: normalizeColor(label.color),
+    description: normalizeDescription(label.description),
+  };
+}
+
 export function normalizeName(name) {
   return name.trim().toLowerCase();
 }
 
 export function normalizeRepositoryRef(value) {
   return value.trim().toLowerCase();
+}
+
+export function labelsExactlyMatch(left, right) {
+  const normalizedLeft = normalizeLabelSpec(left);
+  const normalizedRight = normalizeLabelSpec(right);
+
+  return (
+    normalizedLeft.name === normalizedRight.name
+    && normalizedLeft.color === normalizedRight.color
+    && normalizedLeft.description === normalizedRight.description
+  );
+}
+
+export function labelSpecKey(label) {
+  const normalized = normalizeLabelSpec(label);
+  return `${normalized.name}\0${normalized.color}\0${normalized.description}`;
 }
 
 function stripJsonComments(contents) {

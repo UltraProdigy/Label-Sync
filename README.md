@@ -23,7 +23,7 @@ The normal flow is:
 
 1. You run `Org-Label-Sync` manually.
 2. It first calls `Config-Label_Sync`.
-3. `Config-Label_Sync` reads the labels on this repository and rewrites `config/labels.jsonc` so the file matches the repo's current managed labels.
+3. `Config-Label_Sync` reads the labels on this repository and rewrites `config/labels.jsonc` so the file matches the repo's current labels.
 4. If that file changed, `Config-Label_Sync` commits and pushes the update.
 5. That config change triggers `Validate-Configs`.
 6. `Org-Label-Sync` then checks out the latest default branch, validates the config again, and syncs labels across the organization.
@@ -86,7 +86,7 @@ Example:
 
 This is the managed label set that gets created or updated across the org.
 
-It is normally maintained automatically by `Config-Label_Sync`, based on the labels currently present on this repository after excluding auto-pruned labels.
+It is normally maintained automatically by `Config-Label_Sync`, based on the labels currently present on this repository.
 
 Each label object uses:
 
@@ -108,21 +108,34 @@ Example:
 
 ### `config/auto-pruned-labels.jsonc`
 
-This is the list of labels that should always be removed from synced repositories.
+This is the list of exact labels that should be removed from synced repositories when they are not managed by `config/labels.jsonc`.
 
-The starter file is prefilled with GitHub's default labels:
+Each entry must include:
 
-- `bug`
-- `documentation`
-- `duplicate`
-- `enhancement`
-- `good first issue`
-- `help wanted`
-- `invalid`
-- `question`
-- `wontfix`
+- `name`
+- `color`
+- `description`
 
-If any of those labels exist on this repo, `Config-Label_Sync` excludes them from `labels.jsonc`. If they exist on target repos, `Org-Label-Sync` deletes them.
+The starter file is prefilled with GitHub's default labels as exact specs:
+
+```jsonc
+[
+  {
+    "name": "bug",
+    "color": "d73a4a",
+    "description": "Something isn't working"
+  },
+  {
+    "name": "enhancement",
+    "color": "a2eeef",
+    "description": "New feature or request"
+  }
+]
+```
+
+`Org-Label-Sync` only deletes a configured auto-pruned label when the target repository label has the same name casing, color, and description. A custom label such as `Enhancement`, or an `enhancement` label with a different description or color, is not deleted by this file.
+
+Managed labels are the source of truth. If a label exists in `config/labels.jsonc`, it is created or updated on target repositories and is not deleted by `config/auto-pruned-labels.jsonc`, even when it has the same name as an auto-pruned default.
 
 ### `config/repository-filter.jsonc`
 
@@ -173,8 +186,8 @@ What it does:
 1. Checks out the default branch
 2. Loads shared settings from `config/properties.jsonc`
 3. Reads the current labels on the source repository
-4. Removes any labels listed in `config/auto-pruned-labels.jsonc`
-5. Rewrites `config/labels.jsonc` so it exactly matches the remaining labels
+4. Rewrites `config/labels.jsonc` so it exactly matches the source repository labels
+5. Validates `config/auto-pruned-labels.jsonc` so exact default-delete specs remain well-formed
 6. Commits and pushes the change if the config was updated
 
 This workflow is the bridge between "the labels on this repo right now" and "the managed config we sync elsewhere."
@@ -202,7 +215,7 @@ Validation includes:
 - duplicate whitelist and blacklist detection
 - invalid colors
 - invalid repo names
-- overlap detection between `labels.jsonc` and `auto-pruned-labels.jsonc`
+- exact auto-pruned label shape validation
 - validation for the shared config used by `Remove-Labels`
 
 ### `Org-Label-Sync`
@@ -228,7 +241,7 @@ What it does:
 5. Discovers repos in the configured organization
 6. Applies `config/repository-filter.jsonc`
 7. Creates or updates labels from `config/labels.jsonc`
-8. Deletes labels listed in `config/auto-pruned-labels.jsonc`
+8. Deletes labels that exactly match entries in `config/auto-pruned-labels.jsonc` unless that label name is managed by `config/labels.jsonc`
 9. Optionally deletes any other unmanaged labels if `delete_missing` or `deleteMissingByDefault` is enabled
 10. If the run is not a dry run and at least one target repo changed, writes a changelog under `changelogs/YYYY-MM-DD/` and commits it with `[skip ci]`
 
@@ -300,7 +313,7 @@ That token needs enough access to:
 1. Fork or clone this repository into the organization you want to manage.
 2. Create the sync token secret in the repo.
 3. Update `config/properties.jsonc` for your org and repo.
-4. Adjust `config/auto-pruned-labels.jsonc` if you want a different always-delete list.
+4. Adjust `config/auto-pruned-labels.jsonc` if you want different exact default-delete specs.
 5. Configure `config/repository-filter.jsonc` for blacklist mode or whitelist mode.
 6. Set the labels on this repository to the label set you want to manage.
 7. Run `Config-Label_Sync` once if you want to populate `config/labels.jsonc` immediately.
@@ -310,5 +323,5 @@ That token needs enough access to:
 
 - `labels.jsonc` starts empty until you define or sync labels on this repo
 - all repos in the org are targeted unless excluded by `repository-filter.jsonc`
-- GitHub default labels are auto-pruned by default
+- GitHub default labels are auto-pruned by default only when they exactly match the stored name, color, and description and are not managed in `labels.jsonc`
 - deleting unmanaged labels is off by default unless you enable it

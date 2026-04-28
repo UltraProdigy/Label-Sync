@@ -1,7 +1,8 @@
 import {
   assert,
+  labelSpecKey,
   normalizeColor,
-  normalizeDescription,
+  normalizeLabelSpec,
   normalizeName,
   normalizeRepositoryRef,
 } from "./config-utils.mjs";
@@ -83,11 +84,7 @@ export function validateLabels(labels) {
       assert(typeof label.description === "string", `Label "${label.name}" has a non-string description.`);
     }
 
-    return {
-      name: label.name.trim(),
-      color: normalizeColor(label.color),
-      description: normalizeDescription(label.description),
-    };
+    return normalizeLabelSpec(label);
   });
 }
 
@@ -97,24 +94,17 @@ export function validateDeleteLabels(deleteLabels) {
   const seen = new Set();
 
   return deleteLabels.map((entry, index) => {
-    assert(typeof entry === "string" && entry.trim(), `Delete label at index ${index} must be a non-empty string.`);
+    assert(entry && typeof entry === "object" && !Array.isArray(entry), `Delete label at index ${index} must be an object.`);
+    assert(typeof entry.name === "string" && entry.name.trim(), `Delete label at index ${index} is missing a valid name.`);
+    assert(typeof entry.color === "string" && /^[0-9a-fA-F]{6}$/.test(normalizeColor(entry.color)), `Delete label "${entry.name}" must have a 6-character hex color.`);
+    assert(typeof entry.description === "string", `Delete label "${entry.name}" must include a string description.`);
 
-    const name = entry.trim();
-    const key = normalizeName(name);
-    assert(!seen.has(key), `Duplicate delete label detected: "${name}".`);
+    const normalized = normalizeLabelSpec(entry);
+    const key = labelSpecKey(normalized);
+    assert(!seen.has(key), `Duplicate exact delete label detected: "${normalized.name}".`);
     seen.add(key);
-    return name;
+    return normalized;
   });
-}
-
-export function assertNoLabelOverlap(desiredLabels, deleteLabels) {
-  const desiredKeys = new Set(desiredLabels.map((label) => normalizeName(label.name)));
-  const overlaps = deleteLabels.filter((label) => desiredKeys.has(normalizeName(label)));
-
-  assert(
-    overlaps.length === 0,
-    `Labels cannot exist in both config/labels.jsonc and config/auto-pruned-labels.jsonc: ${overlaps.join(", ")}.`,
-  );
 }
 
 function validateRepositoryEntries(entries, configKey) {

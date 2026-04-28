@@ -1,6 +1,7 @@
 import path from "node:path";
 import {
   assert,
+  labelsExactlyMatch,
   normalizeColor,
   normalizeDescription,
   normalizeName,
@@ -8,7 +9,6 @@ import {
   readJsonc,
 } from "./lib/config-utils.mjs";
 import {
-  assertNoLabelOverlap,
   validateDeleteLabels,
   validateLabels,
   validateProperties,
@@ -171,12 +171,15 @@ function summarizeLabelDiff(existing, desired) {
   return "update";
 }
 
+function isExactAutoPrunedLabel(label, deleteLabels) {
+  return deleteLabels.some((deleteLabel) => labelsExactlyMatch(label, deleteLabel));
+}
+
 async function syncRepository(token, repository, desiredLabels, deleteLabels, deleteMissing) {
   console.log(`\nSyncing ${repository.full_name}`);
   const existingLabels = await getAllLabels(token, repository.full_name);
   const existingByName = new Map(existingLabels.map((label) => [normalizeName(label.name), label]));
   const desiredKeys = new Set(desiredLabels.map((label) => normalizeName(label.name)));
-  const deleteKeys = new Set(deleteLabels.map((label) => normalizeName(label)));
   const result = {
     repository: repository.full_name,
     createdLabels: [],
@@ -238,7 +241,9 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
   }
 
   for (const existing of existingLabels) {
-    if (!deleteKeys.has(normalizeName(existing.name))) {
+    const existingKey = normalizeName(existing.name);
+
+    if (desiredKeys.has(existingKey) || !isExactAutoPrunedLabel(existing, deleteLabels)) {
       continue;
     }
 
@@ -264,7 +269,7 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
     for (const existing of existingLabels) {
       const existingKey = normalizeName(existing.name);
 
-      if (desiredKeys.has(existingKey) || deleteKeys.has(existingKey)) {
+      if (desiredKeys.has(existingKey) || isExactAutoPrunedLabel(existing, deleteLabels)) {
         continue;
       }
 
@@ -303,7 +308,6 @@ async function main() {
   });
   const labels = validateLabels(await readJsonc(labelsPath));
   const deleteLabels = validateDeleteLabels(await readJsonc(autoPrunedLabelsPath));
-  assertNoLabelOverlap(labels, deleteLabels);
   const repositoryFilter = validateRepositoryFilter(await readJsonc(repositoryFilterPath));
   const activeFilterCount = repositoryFilter.useWhitelist ? repositoryFilter.whitelist.size : repositoryFilter.blacklist.size;
   const activeFilterMode = repositoryFilter.useWhitelist ? "whitelist" : "blacklist";

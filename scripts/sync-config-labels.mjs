@@ -3,7 +3,6 @@ import {
   assert,
   normalizeColor,
   normalizeDescription,
-  normalizeName,
   readJsonc,
   writeJsoncPreservingHeader,
 } from "./lib/config-utils.mjs";
@@ -49,9 +48,8 @@ async function getAllLabels(token, repo) {
   }
 }
 
-function toManagedLabels(labels, deleteLabels) {
+function toManagedLabels(labels) {
   return labels
-    .filter((label) => !deleteLabels.has(normalizeName(label.name)))
     .map((label) => ({
       name: label.name.trim(),
       color: normalizeColor(label.color),
@@ -71,16 +69,14 @@ async function main() {
   const repository = process.env.SOURCE_REPOSITORY ?? properties.sourceRepository;
   assert(repository, "SOURCE_REPOSITORY or GITHUB_REPOSITORY is required.");
 
-  const deleteLabels = new Set(
-    validateDeleteLabels(await readJsonc(autoPrunedLabelsPath)).map((entry) => normalizeName(entry)),
-  );
+  const deleteLabels = validateDeleteLabels(await readJsonc(autoPrunedLabelsPath));
   const repositoryLabels = await getAllLabels(token, repository);
-  const managedLabels = toManagedLabels(repositoryLabels, deleteLabels);
+  const managedLabels = toManagedLabels(repositoryLabels);
 
   await writeJsoncPreservingHeader(labelsPath, managedLabels);
 
   console.log(
-    `Synced ${managedLabels.length} managed labels from ${repository} into config/labels.jsonc after excluding ${deleteLabels.size} auto-pruned labels.`,
+    `Synced ${managedLabels.length} managed labels from ${repository} into config/labels.jsonc. Source labels take precedence over ${deleteLabels.length} exact auto-pruned label specs.`,
   );
 }
 
