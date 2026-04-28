@@ -31,7 +31,7 @@ The normal flow is:
 
 The reverse flow is:
 
-1. You make a non-bot commit to `config/**` on the default branch.
+1. You make a non-bot commit to `config/labels.jsonc` on the default branch.
 2. `Validate-Configs` runs for that commit.
 3. If validation passes, `Reverse-Config-Label-Sync` updates the configured source repository labels from `config/labels.jsonc`.
 4. Bot commits are ignored, so `Config-Label_Sync` can update `labels.jsonc` without triggering a reverse sync loop.
@@ -260,7 +260,7 @@ Trigger:
 What it does:
 
 1. Checks out the exact commit that passed validation
-2. Skips the run unless the triggering commit changed `config/**`
+2. Skips the run unless the triggering commit changed `config/labels.jsonc`
 3. Skips the run when the triggering commit author or committer is a bot
 4. Loads shared settings from `config/properties.jsonc`
 5. Resolves either the configured PAT or a GitHub App installation token
