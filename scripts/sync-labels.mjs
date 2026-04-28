@@ -9,7 +9,7 @@ import {
   readJsonc,
 } from "./lib/config-utils.mjs";
 import {
-  validateDeleteLabels,
+  validateGithubDefaultLabels,
   validateLabels,
   validateProperties,
   validateRepositoryFilter,
@@ -19,12 +19,13 @@ import { renderLabelSyncSection, writeChangelog } from "./lib/changelog-utils.mj
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
 const labelsPath = path.join(workspaceRoot, "config", "labels.jsonc");
-const autoPrunedLabelsPath = path.join(workspaceRoot, "config", "auto-pruned-labels.jsonc");
+const githubDefaultLabelsPath = path.join(workspaceRoot, "config", "github-default-labels.jsonc");
 const repositoryFilterPath = path.join(workspaceRoot, "config", "repository-filter.jsonc");
 
 const validateOnly = process.argv.includes("--validate-only");
 const dryRun = validateOnly || process.env.DRY_RUN === "true";
 const deleteMissingOverride = parseBoolean(process.env.DELETE_MISSING);
+const deleteGithubDefaultLabelsOverride = parseBoolean(process.env.DELETE_GITHUB_DEFAULT_LABELS);
 const targetRepositoryFilter = parseRepositoryFilter(process.env.TARGET_REPOSITORIES);
 
 function parseBoolean(value) {
@@ -177,11 +178,11 @@ function summarizeLabelDiff(existing, desired) {
   return "update";
 }
 
-function isExactAutoPrunedLabel(label, deleteLabels) {
-  return deleteLabels.some((deleteLabel) => labelsExactlyMatch(label, deleteLabel));
+function isExactGithubDefaultLabel(label, githubDefaultLabels) {
+  return githubDefaultLabels.some((githubDefaultLabel) => labelsExactlyMatch(label, githubDefaultLabel));
 }
 
-async function syncRepository(token, repository, desiredLabels, deleteLabels, deleteMissing) {
+async function syncRepository(token, repository, desiredLabels, githubDefaultLabels, deleteMissing, deleteGithubDefaultLabels) {
   console.log(`\nSyncing ${repository.full_name}`);
   const existingLabels = await getAllLabels(token, repository.full_name);
   const existingByName = new Map(existingLabels.map((label) => [normalizeName(label.name), label]));
@@ -190,14 +191,14 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
     repository: repository.full_name,
     createdLabels: [],
     updatedLabels: [],
-    deletedConfiguredLabels: [],
+    deletedGithubDefaultLabels: [],
     deletedMissingLabels: [],
     hasChanges: false,
   };
 
   let created = 0;
   let updated = 0;
-  let deletedConfigured = 0;
+  let deletedGithubDefaults = 0;
   let deletedMissing = 0;
   let unchanged = 0;
 
@@ -246,28 +247,30 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
     }
   }
 
-  for (const existing of existingLabels) {
-    const existingKey = normalizeName(existing.name);
+  if (deleteGithubDefaultLabels) {
+    for (const existing of existingLabels) {
+      const existingKey = normalizeName(existing.name);
 
-    if (desiredKeys.has(existingKey) || !isExactAutoPrunedLabel(existing, deleteLabels)) {
-      continue;
-    }
+      if (desiredKeys.has(existingKey) || !isExactGithubDefaultLabel(existing, githubDefaultLabels)) {
+        continue;
+      }
 
-    deletedConfigured += 1;
-    result.deletedConfiguredLabels.push({
-      name: existing.name,
-      color: normalizeColor(existing.color),
-      description: normalizeDescription(existing.description),
-    });
-    result.hasChanges = true;
-    console.log(`  - ${existing.name} (configured delete)`);
+      deletedGithubDefaults += 1;
+      result.deletedGithubDefaultLabels.push({
+        name: existing.name,
+        color: normalizeColor(existing.color),
+        description: normalizeDescription(existing.description),
+      });
+      result.hasChanges = true;
+      console.log(`  - ${existing.name} (GitHub default label)`);
 
-    if (!dryRun) {
-      await githubRequest(
-        token,
-        "DELETE",
-        `/repos/${repository.full_name}/labels/${encodeURIComponent(existing.name)}`,
-      );
+      if (!dryRun) {
+        await githubRequest(
+          token,
+          "DELETE",
+          `/repos/${repository.full_name}/labels/${encodeURIComponent(existing.name)}`,
+        );
+      }
     }
   }
 
@@ -275,7 +278,7 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
     for (const existing of existingLabels) {
       const existingKey = normalizeName(existing.name);
 
-      if (desiredKeys.has(existingKey) || isExactAutoPrunedLabel(existing, deleteLabels)) {
+      if (desiredKeys.has(existingKey) || isExactGithubDefaultLabel(existing, githubDefaultLabels)) {
         continue;
       }
 
@@ -299,7 +302,7 @@ async function syncRepository(token, repository, desiredLabels, deleteLabels, de
   }
 
   console.log(
-    `Summary for ${repository.full_name}: created=${created}, updated=${updated}, deletedConfigured=${deletedConfigured}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
+    `Summary for ${repository.full_name}: created=${created}, updated=${updated}, deletedGithubDefaults=${deletedGithubDefaults}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
   );
 
   return result;
@@ -312,13 +315,13 @@ async function main() {
     includeSourceRepository: true,
   });
   const labels = validateLabels(await readJsonc(labelsPath));
-  const deleteLabels = validateDeleteLabels(await readJsonc(autoPrunedLabelsPath));
+  const githubDefaultLabels = validateGithubDefaultLabels(await readJsonc(githubDefaultLabelsPath));
   const repositoryFilter = validateRepositoryFilter(await readJsonc(repositoryFilterPath));
   const activeFilterCount = repositoryFilter.useWhitelist ? repositoryFilter.whitelist.size : repositoryFilter.blacklist.size;
   const activeFilterMode = repositoryFilter.useWhitelist ? "whitelist" : "blacklist";
 
   console.log(
-    `Loaded ${labels.length} managed labels, ${deleteLabels.length} auto-pruned labels, and ${activeFilterCount} active repository filter entries from config/repository-filter.jsonc (mode=${activeFilterMode}).`,
+    `Loaded ${labels.length} managed labels, ${githubDefaultLabels.length} GitHub default labels, and ${activeFilterCount} active repository filter entries from config/repository-filter.jsonc (mode=${activeFilterMode}).`,
   );
 
   if (validateOnly) {
@@ -358,10 +361,18 @@ async function main() {
 
   console.log(dryRun ? "Running in dry-run mode." : "Applying changes.");
   const deleteMissing = deleteMissingOverride ?? false;
+  const deleteGithubDefaultLabels = deleteGithubDefaultLabelsOverride ?? false;
   const results = [];
 
   for (const repository of repositories) {
-    const result = await syncRepository(token, repository, labels, deleteLabels, deleteMissing);
+    const result = await syncRepository(
+      token,
+      repository,
+      labels,
+      githubDefaultLabels,
+      deleteMissing,
+      deleteGithubDefaultLabels,
+    );
     results.push(result);
   }
 
@@ -374,6 +385,7 @@ async function main() {
         ? "Repository selection: workflow dispatch config override"
         : `Repository filter mode: ${activeFilterMode}`,
       `Processed repositories: ${repositories.length}`,
+      `Delete GitHub default labels: ${deleteGithubDefaultLabels}`,
       `Delete missing labels: ${deleteMissing}`,
     ].filter((line) => line !== null),
     sections: results.map(renderLabelSyncSection),

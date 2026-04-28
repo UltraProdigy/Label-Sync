@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_on_issues:
-        description: "Remove from Issues"
+        description: "Remove From Issues"
         required: true
         type: boolean
         default: true
@@ -14,10 +14,10 @@ on:
         type: boolean
         default: false
       run_on_pull_requests:
-        description: "Remove from Pull Requests"
+        description: "Remove From Pull Requests"
         required: true
         type: boolean
-        default: false
+        default: true
       target_only_closed_pull_requests:
         description: "Target Only Closed Pull Requests"
         required: true

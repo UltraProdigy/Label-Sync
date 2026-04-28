@@ -6,12 +6,12 @@ import {
   readJsonc,
   writeJsoncPreservingHeader,
 } from "./lib/config-utils.mjs";
-import { validateDeleteLabels, validateProperties } from "./lib/config-validation.mjs";
+import { validateGithubDefaultLabels, validateProperties } from "./lib/config-validation.mjs";
 
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
 const labelsPath = path.join(workspaceRoot, "config", "labels.jsonc");
-const autoPrunedLabelsPath = path.join(workspaceRoot, "config", "auto-pruned-labels.jsonc");
+const githubDefaultLabelsPath = path.join(workspaceRoot, "config", "github-default-labels.jsonc");
 
 async function githubRequest(token, method, apiPath) {
   const response = await fetch(`https://api.github.com${apiPath}`, {
@@ -69,14 +69,14 @@ async function main() {
   const repository = process.env.SOURCE_REPOSITORY ?? properties.sourceRepository;
   assert(repository, "SOURCE_REPOSITORY or GITHUB_REPOSITORY is required.");
 
-  const deleteLabels = validateDeleteLabels(await readJsonc(autoPrunedLabelsPath));
+  const githubDefaultLabels = validateGithubDefaultLabels(await readJsonc(githubDefaultLabelsPath));
   const repositoryLabels = await getAllLabels(token, repository);
   const managedLabels = toManagedLabels(repositoryLabels);
 
   await writeJsoncPreservingHeader(labelsPath, managedLabels);
 
   console.log(
-    `Synced ${managedLabels.length} managed labels from ${repository} into config/labels.jsonc. Source labels take precedence over ${deleteLabels.length} exact auto-pruned label specs.`,
+    `Synced ${managedLabels.length} managed labels from ${repository} into config/labels.jsonc. Source labels take precedence over ${githubDefaultLabels.length} exact GitHub default label specs.`,
   );
 }
 

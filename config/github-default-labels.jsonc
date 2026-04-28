@@ -1,3 +1,6 @@
+// GitHub's default label set rarely changes.
+// You will likely never need to modify this file unless GitHub changes the default labels it creates for new repositories.
+//
 // Example:
 // [
 //   {

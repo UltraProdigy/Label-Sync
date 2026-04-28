@@ -197,20 +197,20 @@ export function validateLabels(labels) {
   });
 }
 
-export function validateDeleteLabels(deleteLabels) {
-  assert(Array.isArray(deleteLabels), "config/auto-pruned-labels.jsonc must contain an array.");
+export function validateGithubDefaultLabels(githubDefaultLabels) {
+  assert(Array.isArray(githubDefaultLabels), "config/github-default-labels.jsonc must contain an array.");
 
   const seen = new Set();
 
-  return deleteLabels.map((entry, index) => {
-    assert(entry && typeof entry === "object" && !Array.isArray(entry), `Delete label at index ${index} must be an object.`);
-    assert(typeof entry.name === "string" && entry.name.trim(), `Delete label at index ${index} is missing a valid name.`);
-    assert(typeof entry.color === "string" && /^[0-9a-fA-F]{6}$/.test(normalizeColor(entry.color)), `Delete label "${entry.name}" must have a 6-character hex color.`);
-    assert(typeof entry.description === "string", `Delete label "${entry.name}" must include a string description.`);
+  return githubDefaultLabels.map((entry, index) => {
+    assert(entry && typeof entry === "object" && !Array.isArray(entry), `GitHub default label at index ${index} must be an object.`);
+    assert(typeof entry.name === "string" && entry.name.trim(), `GitHub default label at index ${index} is missing a valid name.`);
+    assert(typeof entry.color === "string" && /^[0-9a-fA-F]{6}$/.test(normalizeColor(entry.color)), `GitHub default label "${entry.name}" must have a 6-character hex color.`);
+    assert(typeof entry.description === "string", `GitHub default label "${entry.name}" must include a string description.`);
 
     const normalized = normalizeLabelSpec(entry);
     const key = labelSpecKey(normalized);
-    assert(!seen.has(key), `Duplicate exact delete label detected: "${normalized.name}".`);
+    assert(!seen.has(key), `Duplicate GitHub default label detected: "${normalized.name}".`);
     seen.add(key);
     return normalized;
   });

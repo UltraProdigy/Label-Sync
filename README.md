@@ -48,7 +48,7 @@ The reverse flow is:
 |       |-- reverse-config-label-sync.yml
 |       `-- validate-configs.yml
 |-- config/
-|   |-- auto-pruned-labels.jsonc
+|   |-- github-default-labels.jsonc
 |   |-- labels.jsonc
 |   |-- properties.jsonc
 |   `-- repository-filter.jsonc
@@ -134,9 +134,11 @@ Example:
 ]
 ```
 
-### `config/auto-pruned-labels.jsonc`
+### `config/github-default-labels.jsonc`
 
-This is the list of exact labels that should be removed from synced repositories when they are not managed by `config/labels.jsonc`.
+This is the list of exact GitHub default labels that can be removed from synced repositories when they are not managed by `config/labels.jsonc`.
+
+You will likely never need to modify this file unless GitHub changes the default labels it creates for new repositories.
 
 Each entry must include:
 
@@ -144,7 +146,7 @@ Each entry must include:
 - `color`
 - `description`
 
-The starter file is prefilled with GitHub's default labels as exact specs:
+The file is prefilled with GitHub's default labels as exact specs:
 
 ```jsonc
 [
@@ -161,9 +163,9 @@ The starter file is prefilled with GitHub's default labels as exact specs:
 ]
 ```
 
-`Org-Label-Sync` only deletes a configured auto-pruned label when the target repository label has the same name casing, color, and description. A custom label such as `Enhancement`, or an `enhancement` label with a different description or color, is not deleted by this file.
+`Org-Label-Sync` only deletes an entry from this file when the `delete_github_default_labels` workflow checkbox is checked and the target repository label has the same name casing, color, and description. A custom label such as `Enhancement`, or an `enhancement` label with a different description or color, is not deleted as a GitHub default label.
 
-Managed labels are the source of truth. If a label exists in `config/labels.jsonc`, it is created or updated on target repositories and is not deleted by `config/auto-pruned-labels.jsonc`, even when it has the same name as an auto-pruned default.
+Managed labels are the source of truth. If a label exists in `config/labels.jsonc`, it is created or updated on target repositories and is not deleted by `config/github-default-labels.jsonc`, even when it has the same name as a GitHub default label.
 
 ### `config/repository-filter.jsonc`
 
@@ -216,7 +218,7 @@ What it does:
 3. Resolves either the configured PAT or a GitHub App installation token
 4. Reads the current labels on the source repository
 5. Rewrites `config/labels.jsonc` so it exactly matches the source repository labels
-6. Validates `config/auto-pruned-labels.jsonc` so exact default-delete specs remain well-formed
+6. Validates `config/github-default-labels.jsonc` so exact GitHub default label specs remain well-formed
 7. Commits and pushes the change if the config was updated
 
 This workflow is the bridge between "the labels on this repo right now" and "the managed config we sync elsewhere."
@@ -244,7 +246,7 @@ Validation includes:
 - duplicate whitelist and blacklist detection
 - invalid colors
 - invalid repo names
-- exact auto-pruned label shape validation
+- exact GitHub default label shape validation
 - validation for the shared config used by `Remove-Labels`
 
 ### `Reverse-Config-Label-Sync`
@@ -264,7 +266,7 @@ What it does:
 5. Resolves either the configured PAT or a GitHub App installation token
 6. Validates the config again as a local guard
 7. Creates or updates source repository labels from `config/labels.jsonc`
-8. Deletes exact auto-pruned labels and any other source repository labels that are not in `config/labels.jsonc`
+8. Deletes exact GitHub default labels and any other source repository labels that are not in `config/labels.jsonc`
 
 This workflow is the bridge from "the managed config was changed by a person" back to "the source repository label settings should now match that config."
 
@@ -280,6 +282,7 @@ Inputs:
 
 - `dry_run`: preview changes without applying repository label changes; when previewed changes exist, writes a fake changelog under `fake-changelogs/`
 - `delete_missing`: delete extra labels that are not in `config/labels.jsonc`; unchecked keeps extra labels
+- `delete_github_default_labels`: delete exact GitHub default labels from `config/github-default-labels.jsonc`; checked by default, unchecked keeps them
 - `repositories`: comma-separated config override that runs exclusively on those repositories and ignores `repository-filter.jsonc`
 
 What it does:
@@ -292,8 +295,8 @@ What it does:
 6. Discovers repos in the configured organization
 7. Applies `config/repository-filter.jsonc`, unless `repositories` was provided as a workflow dispatch config override
 8. Creates or updates labels from `config/labels.jsonc`
-9. Deletes labels that exactly match entries in `config/auto-pruned-labels.jsonc` unless that label name is managed by `config/labels.jsonc`
-10. Optionally deletes any other unmanaged labels only when the `delete_missing` workflow checkbox is checked
+9. Deletes labels that exactly match entries in `config/github-default-labels.jsonc` only when the `delete_github_default_labels` workflow checkbox is checked, unless that label name is managed by `config/labels.jsonc`
+10. Optionally deletes any other unmanaged labels only when the `delete_missing` workflow checkbox is checked; exact GitHub default labels are reserved for `delete_github_default_labels`
 11. If at least one target repo changed or would change, writes a changelog and commits it with `[skip ci]`; real runs write to `changelogs/YYYY-MM-DD/`, while preview runs write fake changelogs to `fake-changelogs/YYYY-MM-DD/` and do not apply repository changes
 
 ### `Remove-Labels`
@@ -333,7 +336,7 @@ Each changelog file is created only when a workflow actually changes, or in prev
 
 - created labels
 - updated labels, including changed fields
-- configured auto-pruned labels that were deleted
+- GitHub default labels that were deleted
 - unmanaged labels that were deleted when delete-missing is enabled
 
 `Remove-Labels` changelogs include:
@@ -376,7 +379,7 @@ The GitHub App installation must be granted access to this configuration reposit
 1. Fork or clone this repository into the organization you want to manage.
 2. Create either the PAT secret or the GitHub App secrets in the repo.
 3. Update `config/properties.jsonc` for your org, repo, and auth mode.
-4. Adjust `config/auto-pruned-labels.jsonc` if you want different exact default-delete specs.
+4. Leave `config/github-default-labels.jsonc` alone unless GitHub changes its default labels.
 5. Configure `config/repository-filter.jsonc` for blacklist mode or whitelist mode.
 6. Set the labels on this repository to the label set you want to manage.
 7. Run `Config-Label_Sync` once if you want to populate `config/labels.jsonc` immediately.
@@ -386,5 +389,5 @@ The GitHub App installation must be granted access to this configuration reposit
 
 - `labels.jsonc` starts empty until you define or sync labels on this repo
 - all repos in the org are targeted unless excluded by `repository-filter.jsonc`
-- GitHub default labels are auto-pruned by default only when they exactly match the stored name, color, and description and are not managed in `labels.jsonc`
+- GitHub default labels are pruned by default when they exactly match `config/github-default-labels.jsonc`; uncheck `delete_github_default_labels` to keep them
 - deleting unmanaged labels is off by default unless you check `delete_missing` when running `Org-Label-Sync`

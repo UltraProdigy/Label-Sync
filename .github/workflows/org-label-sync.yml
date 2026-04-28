@@ -9,10 +9,15 @@ on:
         type: boolean
         default: false
       delete_missing:
-        description: "Delete labels that are not present in config"
+        description: "Delete extra non-default labels that are not present in config"
         required: false
         type: boolean
         default: false
+      delete_github_default_labels:
+        description: "Delete Github default labels"
+        required: false
+        type: boolean
+        default: true
       repositories:
         description: "Config Override: Run workflow on this set of repositories exclusively. (Type name(s), separated by comma)"
         required: false
@@ -73,6 +78,7 @@ jobs:
           ORG_NAME: ${{ steps.properties.outputs.organization }}
           DRY_RUN: ${{ inputs.dry_run }}
           DELETE_MISSING: ${{ inputs.delete_missing }}
+          DELETE_GITHUB_DEFAULT_LABELS: ${{ inputs.delete_github_default_labels }}
           TARGET_REPOSITORIES: ${{ inputs.repositories }}
         run: node scripts/sync-labels.mjs
 

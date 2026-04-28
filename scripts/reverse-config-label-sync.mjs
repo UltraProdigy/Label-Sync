@@ -8,7 +8,7 @@ import {
   readJsonc,
 } from "./lib/config-utils.mjs";
 import {
-  validateDeleteLabels,
+  validateGithubDefaultLabels,
   validateLabels,
   validateProperties,
 } from "./lib/config-validation.mjs";
@@ -16,7 +16,7 @@ import {
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
 const labelsPath = path.join(workspaceRoot, "config", "labels.jsonc");
-const autoPrunedLabelsPath = path.join(workspaceRoot, "config", "auto-pruned-labels.jsonc");
+const githubDefaultLabelsPath = path.join(workspaceRoot, "config", "github-default-labels.jsonc");
 
 const validateOnly = process.argv.includes("--validate-only");
 const dryRun = validateOnly || process.env.DRY_RUN === "true";
@@ -77,11 +77,11 @@ function summarizeLabelDiff(existing, desired) {
   return "update";
 }
 
-function isExactAutoPrunedLabel(label, deleteLabels) {
-  return deleteLabels.some((deleteLabel) => labelsExactlyMatch(label, deleteLabel));
+function isExactGithubDefaultLabel(label, githubDefaultLabels) {
+  return githubDefaultLabels.some((githubDefaultLabel) => labelsExactlyMatch(label, githubDefaultLabel));
 }
 
-async function syncSourceRepository(token, repository, desiredLabels, deleteLabels) {
+async function syncSourceRepository(token, repository, desiredLabels, githubDefaultLabels) {
   console.log(`Syncing ${repository} labels from config`);
   const existingLabels = await getAllLabels(token, repository);
   const existingByName = new Map(existingLabels.map((label) => [normalizeName(label.name), label]));
@@ -89,7 +89,7 @@ async function syncSourceRepository(token, repository, desiredLabels, deleteLabe
 
   let created = 0;
   let updated = 0;
-  let deletedConfigured = 0;
+  let deletedGithubDefaults = 0;
   let deletedMissing = 0;
   let unchanged = 0;
 
@@ -130,12 +130,12 @@ async function syncSourceRepository(token, repository, desiredLabels, deleteLabe
   for (const existing of existingLabels) {
     const existingKey = normalizeName(existing.name);
 
-    if (desiredKeys.has(existingKey) || !isExactAutoPrunedLabel(existing, deleteLabels)) {
+    if (desiredKeys.has(existingKey) || !isExactGithubDefaultLabel(existing, githubDefaultLabels)) {
       continue;
     }
 
-    deletedConfigured += 1;
-    console.log(`  - ${existing.name} (configured delete)`);
+    deletedGithubDefaults += 1;
+    console.log(`  - ${existing.name} (GitHub default label)`);
 
     if (!dryRun) {
       await githubRequest(
@@ -149,7 +149,7 @@ async function syncSourceRepository(token, repository, desiredLabels, deleteLabe
   for (const existing of existingLabels) {
     const existingKey = normalizeName(existing.name);
 
-    if (desiredKeys.has(existingKey) || isExactAutoPrunedLabel(existing, deleteLabels)) {
+    if (desiredKeys.has(existingKey) || isExactGithubDefaultLabel(existing, githubDefaultLabels)) {
       continue;
     }
 
@@ -166,7 +166,7 @@ async function syncSourceRepository(token, repository, desiredLabels, deleteLabe
   }
 
   console.log(
-    `Summary for ${repository}: created=${created}, updated=${updated}, deletedConfigured=${deletedConfigured}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
+    `Summary for ${repository}: created=${created}, updated=${updated}, deletedGithubDefaults=${deletedGithubDefaults}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
   );
 }
 
@@ -176,12 +176,12 @@ async function main() {
     defaultSourceRepository: process.env.GITHUB_REPOSITORY ?? "",
   });
   const labels = validateLabels(await readJsonc(labelsPath));
-  const deleteLabels = validateDeleteLabels(await readJsonc(autoPrunedLabelsPath));
+  const githubDefaultLabels = validateGithubDefaultLabels(await readJsonc(githubDefaultLabelsPath));
   const repository = process.env.SOURCE_REPOSITORY ?? properties.sourceRepository;
   assert(repository, "SOURCE_REPOSITORY or properties.sourceRepository is required.");
 
   console.log(
-    `Loaded ${labels.length} managed labels and ${deleteLabels.length} exact auto-pruned label specs for ${repository}.`,
+    `Loaded ${labels.length} managed labels and ${githubDefaultLabels.length} exact GitHub default label specs for ${repository}.`,
   );
 
   if (validateOnly) {
@@ -192,7 +192,7 @@ async function main() {
   const token = process.env.LABEL_SYNC_TOKEN;
   assert(token, "LABEL_SYNC_TOKEN is required unless --validate-only is used.");
 
-  await syncSourceRepository(token, repository, labels, deleteLabels);
+  await syncSourceRepository(token, repository, labels, githubDefaultLabels);
 
   if (dryRun) {
     console.log("Dry-run mode did not apply label changes.");
