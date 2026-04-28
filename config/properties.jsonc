@@ -12,8 +12,7 @@
 //       "installationIdSecretName": "LABEL_SYNC_APP_INSTALLATION_ID"
 //     }
 //   },
-//   "sourceRepository": "your-org-name/label-sync",
-//   "deleteMissingByDefault": false
+//   "sourceRepository": "your-org-name/label-sync"
 // }
 {
   "organization": "UltraProdigy",
@@ -33,7 +32,5 @@
       "installationIdSecretName": "LABEL_SYNC_APP_INSTALLATION_ID"
     }
   },
-  "sourceRepository": "UltraProdigy/Label-Sync",
-  // This setting determines whether labels that are present in the target repositories but missing from the source repository should be deleted by default. If set to true, such labels will be automatically deleted during synchronization. If set to false, they will be retained unless explicitly removed.
-  "deleteMissingByDefault": false
+  "sourceRepository": "UltraProdigy/Label-Sync"
 }

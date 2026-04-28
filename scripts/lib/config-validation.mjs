@@ -133,7 +133,6 @@ export function validateProperties(properties, options = {}) {
     requireAuthentication = requireLabelSyncTokenSecretName,
     includeSourceRepository = false,
     defaultSourceRepository = "",
-    includeDeleteMissingByDefault = false,
   } = options;
 
   assert(properties && typeof properties === "object" && !Array.isArray(properties), "config/properties.jsonc must contain an object.");
@@ -171,14 +170,6 @@ export function validateProperties(properties, options = {}) {
 
   if (includeSourceRepository) {
     validated.sourceRepository = (properties.sourceRepository ?? defaultSourceRepository).trim();
-  }
-
-  if (properties.deleteMissingByDefault !== undefined) {
-    assert(typeof properties.deleteMissingByDefault === "boolean", "properties.deleteMissingByDefault must be a boolean.");
-  }
-
-  if (includeDeleteMissingByDefault) {
-    validated.deleteMissingByDefault = properties.deleteMissingByDefault ?? false;
   }
 
   return validated;

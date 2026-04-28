@@ -310,7 +310,6 @@ async function main() {
     requireOrganization: true,
     requireLabelSyncTokenSecretName: true,
     includeSourceRepository: true,
-    includeDeleteMissingByDefault: true,
   });
   const labels = validateLabels(await readJsonc(labelsPath));
   const deleteLabels = validateDeleteLabels(await readJsonc(autoPrunedLabelsPath));
@@ -358,7 +357,7 @@ async function main() {
   }
 
   console.log(dryRun ? "Running in dry-run mode." : "Applying changes.");
-  const deleteMissing = deleteMissingOverride ?? properties.deleteMissingByDefault;
+  const deleteMissing = deleteMissingOverride ?? false;
   const results = [];
 
   for (const repository of repositories) {

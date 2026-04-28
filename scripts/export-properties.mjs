@@ -12,7 +12,6 @@ async function main() {
     requireLabelSyncTokenSecretName: true,
     includeSourceRepository: true,
     defaultSourceRepository: process.env.GITHUB_REPOSITORY ?? "",
-    includeDeleteMissingByDefault: true,
   });
   const outputPath = process.env.GITHUB_OUTPUT;
 
@@ -30,7 +29,6 @@ async function main() {
     `github_app_private_key_secret_name=${properties.githubAppPrivateKeySecretName}`,
     `github_app_installation_id_secret_name=${properties.githubAppInstallationIdSecretName}`,
     `source_repository=${properties.sourceRepository}`,
-    `delete_missing_by_default=${properties.deleteMissingByDefault}`,
   ];
 
   await fs.appendFile(outputPath, `${lines.join("\n")}\n`, "utf8");

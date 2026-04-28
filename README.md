@@ -87,7 +87,6 @@ Fields:
 - `authentication.githubApp.privateKeySecretName`: the GitHub Actions secret containing the GitHub App private key when `mode` is `githubApp`
 - `authentication.githubApp.installationIdSecretName`: the GitHub Actions secret containing the GitHub App installation ID when `mode` is `githubApp`
 - `sourceRepository`: the repo whose labels are treated as the source for `Config-Label_Sync`
-- `deleteMissingByDefault`: whether org sync should delete labels that are neither managed nor auto-pruned
 
 Example:
 
@@ -105,8 +104,7 @@ Example:
       "installationIdSecretName": "LABEL_SYNC_APP_INSTALLATION_ID"
     }
   },
-  "sourceRepository": "your-org-name/label-sync",
-  "deleteMissingByDefault": false
+  "sourceRepository": "your-org-name/label-sync"
 }
 ```
 
@@ -281,7 +279,7 @@ Trigger:
 Inputs:
 
 - `dry_run`: preview changes without applying repository label changes; when previewed changes exist, writes a fake changelog under `fake-changelogs/`
-- `delete_missing`: override `deleteMissingByDefault` for the run
+- `delete_missing`: delete extra labels that are not in `config/labels.jsonc`; unchecked keeps extra labels
 - `repositories`: comma-separated config override that runs exclusively on those repositories and ignores `repository-filter.jsonc`
 
 What it does:
@@ -295,7 +293,7 @@ What it does:
 7. Applies `config/repository-filter.jsonc`, unless `repositories` was provided as a workflow dispatch config override
 8. Creates or updates labels from `config/labels.jsonc`
 9. Deletes labels that exactly match entries in `config/auto-pruned-labels.jsonc` unless that label name is managed by `config/labels.jsonc`
-10. Optionally deletes any other unmanaged labels if `delete_missing` or `deleteMissingByDefault` is enabled
+10. Optionally deletes any other unmanaged labels only when the `delete_missing` workflow checkbox is checked
 11. If at least one target repo changed or would change, writes a changelog and commits it with `[skip ci]`; real runs write to `changelogs/YYYY-MM-DD/`, while preview runs write fake changelogs to `fake-changelogs/YYYY-MM-DD/` and do not apply repository changes
 
 ### `Remove-Labels`
@@ -389,4 +387,4 @@ The GitHub App installation must be granted access to this configuration reposit
 - `labels.jsonc` starts empty until you define or sync labels on this repo
 - all repos in the org are targeted unless excluded by `repository-filter.jsonc`
 - GitHub default labels are auto-pruned by default only when they exactly match the stored name, color, and description and are not managed in `labels.jsonc`
-- deleting unmanaged labels is off by default unless you enable it
+- deleting unmanaged labels is off by default unless you check `delete_missing` when running `Org-Label-Sync`
