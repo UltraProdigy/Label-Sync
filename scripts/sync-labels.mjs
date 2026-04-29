@@ -30,6 +30,7 @@ const dryRun = validateOnly || process.env.DRY_RUN === "true";
 const deleteMissingOverride = parseBoolean(process.env.DELETE_MISSING);
 const deleteGithubDefaultLabelsOverride = parseBoolean(process.env.DELETE_GITHUB_DEFAULT_LABELS);
 const targetRepositoryFilter = parseRepositoryFilter(process.env.TARGET_REPOSITORIES);
+const labelReplacements = parseLabelReplacements(process.env.LABEL_REPLACEMENTS);
 
 function parseBoolean(value) {
   if (value === undefined || value === null || value === "") {
@@ -50,6 +51,37 @@ function parseRepositoryFilter(value) {
       .map((entry) => entry.trim().toLowerCase())
       .filter(Boolean),
   );
+}
+
+function parseLabelReplacements(value) {
+  if (!value || !value.trim()) {
+    return [];
+  }
+
+  const seenOldNames = new Set();
+
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separatorIndex = entry.indexOf("=");
+      assert(separatorIndex > 0 && separatorIndex < entry.length - 1, `Invalid label replacement "${entry}". Use old=new.`);
+      assert(entry.indexOf("=", separatorIndex + 1) === -1, `Invalid label replacement "${entry}". Label replacement names cannot contain "=".`);
+
+      const oldName = entry.slice(0, separatorIndex).trim();
+      const newName = entry.slice(separatorIndex + 1).trim();
+      assert(oldName, `Invalid label replacement "${entry}". Old label name is empty.`);
+      assert(newName, `Invalid label replacement "${entry}". New label name is empty.`);
+
+      const oldKey = normalizeName(oldName);
+      const newKey = normalizeName(newName);
+      assert(oldKey !== newKey, `Label replacement "${entry}" points to the same normalized label name.`);
+      assert(!seenOldNames.has(oldKey), `Duplicate label replacement source detected: "${oldName}".`);
+      seenOldNames.add(oldKey);
+
+      return { oldName, newName, oldKey, newKey };
+    });
 }
 
 async function githubRequest(token, method, apiPath, body) {
@@ -86,6 +118,26 @@ async function getAllLabels(token, repo) {
 
     if (batch.length < 100) {
       return labels;
+    }
+
+    page += 1;
+  }
+}
+
+async function getIssuesAndPullRequestsWithLabel(token, repo, labelName) {
+  const items = [];
+  let page = 1;
+
+  while (true) {
+    const batch = await githubRequest(
+      token,
+      "GET",
+      `/repos/${repo}/issues?state=all&labels=${encodeURIComponent(labelName)}&per_page=100&page=${page}`,
+    );
+    items.push(...batch);
+
+    if (batch.length < 100) {
+      return items;
     }
 
     page += 1;
@@ -185,22 +237,182 @@ function isExactGithubDefaultLabel(label, githubDefaultLabels) {
   return githubDefaultLabels.some((githubDefaultLabel) => labelsExactlyMatch(label, githubDefaultLabel));
 }
 
+function assertValidLabelReplacements(replacements, desiredLabels, deletedLabels) {
+  const desiredKeys = new Set(desiredLabels.map((label) => normalizeName(label.name)));
+  const deletedKeys = new Set(deletedLabels.map((label) => normalizeName(label.name)));
+
+  for (const replacement of replacements) {
+    assert(
+      deletedKeys.has(replacement.oldKey),
+      `Label replacement source "${replacement.oldName}" must exist in config/deleted-labels.jsonc.`,
+    );
+    assert(
+      desiredKeys.has(replacement.newKey),
+      `Label replacement target "${replacement.newName}" must exist in config/labels.jsonc.`,
+    );
+  }
+}
+
+function updateWorkingLabel(existingByName, workingLabels, key, nextLabel) {
+  existingByName.set(key, nextLabel);
+  const index = workingLabels.findIndex((label) => normalizeName(label.name) === key);
+
+  if (index === -1) {
+    workingLabels.push(nextLabel);
+    return;
+  }
+
+  workingLabels[index] = nextLabel;
+}
+
+function removeWorkingLabel(existingByName, workingLabels, key) {
+  existingByName.delete(key);
+  const index = workingLabels.findIndex((label) => normalizeName(label.name) === key);
+
+  if (index !== -1) {
+    workingLabels.splice(index, 1);
+  }
+}
+
+function countMigratedItems(items) {
+  return items.reduce(
+    (counts, item) => {
+      if (item.pull_request) {
+        counts.pullRequests += 1;
+      } else {
+        counts.issues += 1;
+      }
+
+      return counts;
+    },
+    { issues: 0, pullRequests: 0 },
+  );
+}
+
+function hasLabel(item, labelName) {
+  const requestedKey = normalizeName(labelName);
+  const labels = Array.isArray(item.labels) ? item.labels : [];
+  return labels.some((label) => label && typeof label.name === "string" && normalizeName(label.name) === requestedKey);
+}
+
+async function addLabelToIssueOrPullRequest(token, repositoryFullName, number, labelName) {
+  return githubRequest(
+    token,
+    "POST",
+    `/repos/${repositoryFullName}/issues/${number}/labels`,
+    { labels: [labelName] },
+  );
+}
+
+async function migrateLabelAssignments(token, repositoryFullName, oldLabelName, newLabelName) {
+  const items = await getIssuesAndPullRequestsWithLabel(token, repositoryFullName, oldLabelName);
+  const itemsNeedingNewLabel = items.filter((item) => !hasLabel(item, newLabelName));
+  const matched = countMigratedItems(items);
+  const added = countMigratedItems(itemsNeedingNewLabel);
+
+  if (!dryRun) {
+    for (const item of itemsNeedingNewLabel) {
+      await addLabelToIssueOrPullRequest(token, repositoryFullName, item.number, newLabelName);
+    }
+  }
+
+  return {
+    matchedIssues: matched.issues,
+    matchedPullRequests: matched.pullRequests,
+    addedIssues: added.issues,
+    addedPullRequests: added.pullRequests,
+  };
+}
+
+async function applyLabelReplacements(token, repository, replacements, desiredByName, existingByName, workingLabels, result) {
+  let replaced = 0;
+
+  for (const replacement of replacements) {
+    const existingOld = existingByName.get(replacement.oldKey);
+
+    if (!existingOld) {
+      continue;
+    }
+
+    const desiredNew = desiredByName.get(replacement.newKey);
+    const existingNew = existingByName.get(replacement.newKey);
+
+    if (!existingNew) {
+      replaced += 1;
+      result.labelReplacements.push({
+        oldName: existingOld.name,
+        newName: desiredNew.name,
+        mode: "renamed",
+        matchedIssues: null,
+        matchedPullRequests: null,
+        addedIssues: null,
+        addedPullRequests: null,
+      });
+      result.hasChanges = true;
+      console.log(`  ~ ${existingOld.name} -> ${desiredNew.name} (replacement rename)`);
+
+      if (!dryRun) {
+        await githubRequest(
+          token,
+          "PATCH",
+          `/repos/${repository.full_name}/labels/${encodeURIComponent(existingOld.name)}`,
+          desiredNew,
+        );
+      }
+
+      removeWorkingLabel(existingByName, workingLabels, replacement.oldKey);
+      updateWorkingLabel(existingByName, workingLabels, replacement.newKey, desiredNew);
+      continue;
+    }
+
+    const migration = await migrateLabelAssignments(token, repository.full_name, existingOld.name, desiredNew.name);
+
+    replaced += 1;
+    result.labelReplacements.push({
+      oldName: existingOld.name,
+      newName: desiredNew.name,
+      mode: "migrated",
+      ...migration,
+    });
+    result.hasChanges = true;
+    console.log(
+      `  ~ ${existingOld.name} -> ${desiredNew.name} (replacement migration: issues=${migration.matchedIssues}, pullRequests=${migration.matchedPullRequests})`,
+    );
+    console.log(`  - ${existingOld.name} (replaced label config)`);
+
+    if (!dryRun) {
+      await githubRequest(
+        token,
+        "DELETE",
+        `/repos/${repository.full_name}/labels/${encodeURIComponent(existingOld.name)}`,
+      );
+    }
+
+    removeWorkingLabel(existingByName, workingLabels, replacement.oldKey);
+  }
+
+  return replaced;
+}
+
 async function syncRepository(
   token,
   repository,
   desiredLabels,
   deletedLabels,
+  replacements,
   githubDefaultLabels,
   deleteMissing,
   deleteGithubDefaultLabels,
 ) {
   console.log(`\nSyncing ${repository.full_name}`);
-  const existingLabels = await getAllLabels(token, repository.full_name);
-  const existingByName = new Map(existingLabels.map((label) => [normalizeName(label.name), label]));
+  const workingLabels = await getAllLabels(token, repository.full_name);
+  const existingByName = new Map(workingLabels.map((label) => [normalizeName(label.name), label]));
+  const desiredByName = new Map(desiredLabels.map((label) => [normalizeName(label.name), label]));
   const desiredKeys = new Set(desiredLabels.map((label) => normalizeName(label.name)));
   const deletedKeys = new Set(deletedLabels.map((label) => normalizeName(label.name)));
   const result = {
     repository: repository.full_name,
+    labelReplacements: [],
     createdLabels: [],
     updatedLabels: [],
     deletedConfiguredLabels: [],
@@ -211,6 +423,7 @@ async function syncRepository(
 
   let created = 0;
   let updated = 0;
+  const replaced = await applyLabelReplacements(token, repository, replacements, desiredByName, existingByName, workingLabels, result);
   let deletedConfigured = 0;
   let deletedGithubDefaults = 0;
   let deletedMissing = 0;
@@ -261,7 +474,7 @@ async function syncRepository(
     }
   }
 
-  for (const existing of existingLabels) {
+  for (const existing of [...workingLabels]) {
     const existingKey = normalizeName(existing.name);
 
     if (!deletedKeys.has(existingKey)) {
@@ -284,10 +497,12 @@ async function syncRepository(
         `/repos/${repository.full_name}/labels/${encodeURIComponent(existing.name)}`,
       );
     }
+
+    removeWorkingLabel(existingByName, workingLabels, existingKey);
   }
 
   if (deleteGithubDefaultLabels) {
-    for (const existing of existingLabels) {
+    for (const existing of [...workingLabels]) {
       const existingKey = normalizeName(existing.name);
 
       if (desiredKeys.has(existingKey) || deletedKeys.has(existingKey) || !isExactGithubDefaultLabel(existing, githubDefaultLabels)) {
@@ -310,11 +525,13 @@ async function syncRepository(
           `/repos/${repository.full_name}/labels/${encodeURIComponent(existing.name)}`,
         );
       }
+
+      removeWorkingLabel(existingByName, workingLabels, existingKey);
     }
   }
 
   if (deleteMissing) {
-    for (const existing of existingLabels) {
+    for (const existing of [...workingLabels]) {
       const existingKey = normalizeName(existing.name);
 
       if (desiredKeys.has(existingKey) || deletedKeys.has(existingKey) || isExactGithubDefaultLabel(existing, githubDefaultLabels)) {
@@ -337,11 +554,13 @@ async function syncRepository(
           `/repos/${repository.full_name}/labels/${encodeURIComponent(existing.name)}`,
         );
       }
+
+      removeWorkingLabel(existingByName, workingLabels, existingKey);
     }
   }
 
   console.log(
-    `Summary for ${repository.full_name}: created=${created}, updated=${updated}, deletedConfigured=${deletedConfigured}, deletedGithubDefaults=${deletedGithubDefaults}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
+    `Summary for ${repository.full_name}: replaced=${replaced}, created=${created}, updated=${updated}, deletedConfigured=${deletedConfigured}, deletedGithubDefaults=${deletedGithubDefaults}, deletedMissing=${deletedMissing}, unchanged=${unchanged}`,
   );
 
   return result;
@@ -356,13 +575,14 @@ async function main() {
   const labels = validateLabels(await readJsonc(labelsPath));
   const deletedLabels = validateDeletedLabels(await readJsonc(deletedLabelsPath));
   assertNoManagedDeletedLabelOverlap(labels, deletedLabels);
+  assertValidLabelReplacements(labelReplacements, labels, deletedLabels);
   const githubDefaultLabels = validateGithubDefaultLabels(await readJsonc(githubDefaultLabelsPath));
   const repositoryFilter = validateRepositoryFilter(await readJsonc(repositoryFilterPath));
   const activeFilterCount = repositoryFilter.useWhitelist ? repositoryFilter.whitelist.size : repositoryFilter.blacklist.size;
   const activeFilterMode = repositoryFilter.useWhitelist ? "whitelist" : "blacklist";
 
   console.log(
-    `Loaded ${labels.length} managed labels, ${deletedLabels.length} deleted labels, ${githubDefaultLabels.length} GitHub default labels, and ${activeFilterCount} active repository filter entries from config/repository-filter.jsonc (mode=${activeFilterMode}).`,
+    `Loaded ${labels.length} managed labels, ${deletedLabels.length} deleted labels, ${labelReplacements.length} label replacements, ${githubDefaultLabels.length} GitHub default labels, and ${activeFilterCount} active repository filter entries from config/repository-filter.jsonc (mode=${activeFilterMode}).`,
   );
 
   if (validateOnly) {
@@ -411,6 +631,7 @@ async function main() {
       repository,
       labels,
       deletedLabels,
+      labelReplacements,
       githubDefaultLabels,
       deleteMissing,
       deleteGithubDefaultLabels,
@@ -428,6 +649,7 @@ async function main() {
         : `Repository filter mode: ${activeFilterMode}`,
       `Processed repositories: ${repositories.length}`,
       `Deleted-label config entries: ${deletedLabels.length}`,
+      `Label replacements: ${labelReplacements.length}`,
       `Delete GitHub default labels: ${deleteGithubDefaultLabels}`,
       `Delete missing labels: ${deleteMissing}`,
     ].filter((line) => line !== null),

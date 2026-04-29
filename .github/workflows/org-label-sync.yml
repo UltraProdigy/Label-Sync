@@ -22,6 +22,10 @@ on:
         description: "Config Override: Run workflow on this set of repositories exclusively. (Type name(s), separated by comma)"
         required: false
         type: string
+      label_replacements:
+        description: "Replace deleted labels with managed labels before deletion. Format: old=new, old2=new2"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -71,6 +75,8 @@ jobs:
         run: node scripts/create-github-auth-token.mjs
 
       - name: Validate updated config
+        env:
+          LABEL_REPLACEMENTS: ${{ inputs.label_replacements }}
         run: node scripts/sync-labels.mjs --validate-only
 
       - name: Sync labels across the organization
@@ -80,6 +86,7 @@ jobs:
           DELETE_MISSING: ${{ inputs.delete_missing }}
           DELETE_GITHUB_DEFAULT_LABELS: ${{ inputs.delete_github_default_labels }}
           TARGET_REPOSITORIES: ${{ inputs.repositories }}
+          LABEL_REPLACEMENTS: ${{ inputs.label_replacements }}
         run: node scripts/sync-labels.mjs
 
       - name: Commit changelog

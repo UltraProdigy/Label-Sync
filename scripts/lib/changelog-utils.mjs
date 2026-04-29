@@ -89,6 +89,19 @@ export async function writeChangelog({ workflowName, introLines, sections, direc
 export function renderLabelSyncSection(result) {
   const lines = [];
 
+  const replacements = renderList(result.labelReplacements, (entry) => {
+    if (entry.mode === "renamed") {
+      return `Renamed \`${entry.oldName}\` to \`${entry.newName}\``;
+    }
+
+    return `Replaced \`${entry.oldName}\` with \`${entry.newName}\` on ${entry.matchedIssues} issues and ${entry.matchedPullRequests} pull requests`;
+  });
+  if (replacements) {
+    lines.push("Label replacements:");
+    lines.push(replacements);
+    lines.push("");
+  }
+
   const created = renderList(
     result.createdLabels,
     (label) => `Created \`${label.name}\` (#${label.color})${label.description ? `: ${label.description}` : ""}`,
