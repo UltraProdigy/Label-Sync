@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Preview label changes without applying them"
+        description: "[TEST MODE] Preview label changes without applying them. Generates fake changelog."
         required: false
         type: boolean
         default: false
       delete_missing:
-        description: "Delete extra non-default labels that are not present in config"
+        description: "Delete all other labels that are not present in config"
         required: false
         type: boolean
         default: false
@@ -19,11 +19,11 @@ on:
         type: boolean
         default: true
       repositories:
-        description: "Config Override: Run workflow on this set of repositories exclusively. (Type name(s), separated by comma)"
+        description: "[OPTIONAL] Config Override: Run workflow on this set of repositories exclusively. Format: name, name2"
         required: false
         type: string
       label_replacements:
-        description: "Replace deleted labels with managed labels before deletion. Format: old=new, old2=new2"
+        description: "[OPTIONAL] Label Replacement: Define label replacements before their deletion. Format: old=new, old2=new2"
         required: false
         type: string
 
