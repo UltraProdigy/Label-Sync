@@ -1,0 +1,12 @@
+// Labels removed from config/labels.jsonc by Config-Label_Sync are moved here.
+// Org-Label-Sync deletes matching label names from selected repositories.
+//
+// Example:
+// [
+//   {
+//     "name": "status: stale",
+//     "color": "ededed",
+//     "description": "No recent activity"
+//   }
+// ]
+[]

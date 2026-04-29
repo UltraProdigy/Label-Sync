@@ -55,11 +55,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- config/labels.jsonc; then
+          if git diff --quiet -- config/labels.jsonc config/deleted-labels.jsonc; then
             echo "No config changes detected."
             exit 0
           fi
-          git add config/labels.jsonc
+          git add config/labels.jsonc config/deleted-labels.jsonc
           git commit -m "Sync labels config from source repository"
           git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${{ github.repository }}.git"
           git push origin "HEAD:${{ github.event.repository.default_branch }}"

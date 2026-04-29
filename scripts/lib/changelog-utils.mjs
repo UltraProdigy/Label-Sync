@@ -122,6 +122,16 @@ export function renderLabelSyncSection(result) {
     lines.push("");
   }
 
+  const deletedConfigured = renderList(
+    result.deletedConfiguredLabels,
+    (label) => `Deleted configured removed label \`${label.name}\``,
+  );
+  if (deletedConfigured) {
+    lines.push("Deleted labels from deleted-labels config:");
+    lines.push(deletedConfigured);
+    lines.push("");
+  }
+
   const deletedGithubDefaults = renderList(
     result.deletedGithubDefaultLabels,
     (label) => `Deleted GitHub default label \`${label.name}\``,

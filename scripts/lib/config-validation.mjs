@@ -175,26 +175,52 @@ export function validateProperties(properties, options = {}) {
   return validated;
 }
 
-export function validateLabels(labels) {
-  assert(Array.isArray(labels), "config/labels.jsonc must contain an array.");
+function validateLabelSpecs(labels, { configPath, itemLabel }) {
+  assert(Array.isArray(labels), `${configPath} must contain an array.`);
 
   const seen = new Set();
 
   return labels.map((label, index) => {
-    assert(label && typeof label === "object" && !Array.isArray(label), `Label at index ${index} must be an object.`);
-    assert(typeof label.name === "string" && label.name.trim(), `Label at index ${index} is missing a valid name.`);
-    assert(typeof label.color === "string" && /^[0-9a-fA-F]{6}$/.test(normalizeColor(label.color)), `Label "${label.name}" must have a 6-character hex color.`);
+    assert(label && typeof label === "object" && !Array.isArray(label), `${itemLabel} at index ${index} must be an object.`);
+    assert(typeof label.name === "string" && label.name.trim(), `${itemLabel} at index ${index} is missing a valid name.`);
+    assert(typeof label.color === "string" && /^[0-9a-fA-F]{6}$/.test(normalizeColor(label.color)), `${itemLabel} "${label.name}" must have a 6-character hex color.`);
 
     const key = normalizeName(label.name);
-    assert(!seen.has(key), `Duplicate label name detected: "${label.name}".`);
+    assert(!seen.has(key), `Duplicate ${itemLabel.toLowerCase()} name detected: "${label.name}".`);
     seen.add(key);
 
     if (label.description !== undefined) {
-      assert(typeof label.description === "string", `Label "${label.name}" has a non-string description.`);
+      assert(typeof label.description === "string", `${itemLabel} "${label.name}" has a non-string description.`);
     }
 
     return normalizeLabelSpec(label);
   });
+}
+
+export function validateLabels(labels) {
+  return validateLabelSpecs(labels, {
+    configPath: "config/labels.jsonc",
+    itemLabel: "Label",
+  });
+}
+
+export function validateDeletedLabels(deletedLabels) {
+  return validateLabelSpecs(deletedLabels, {
+    configPath: "config/deleted-labels.jsonc",
+    itemLabel: "Deleted label",
+  });
+}
+
+export function assertNoManagedDeletedLabelOverlap(managedLabels, deletedLabels) {
+  const managedByName = new Map(managedLabels.map((label) => [normalizeName(label.name), label.name]));
+  const overlappingLabels = deletedLabels
+    .filter((label) => managedByName.has(normalizeName(label.name)))
+    .map((label) => label.name);
+
+  assert(
+    overlappingLabels.length === 0,
+    `Labels cannot be both managed and deleted: ${overlappingLabels.join(", ")}.`,
+  );
 }
 
 export function validateGithubDefaultLabels(githubDefaultLabels) {

@@ -5,6 +5,7 @@ This repository is a standalone GitHub label management repo for an organization
 Its job is to:
 
 - keep this repo's label config in sync with the labels currently defined on the repo
+- track labels removed from that source config so they can be deleted from synced repositories
 - validate config changes automatically
 - sync the resulting label set across the rest of the organization
 - remove an exact label from issues and pull requests across the filtered repository set
@@ -25,9 +26,10 @@ The normal flow is:
 1. You run `Org-Label-Sync` manually.
 2. It first calls `Config-Label_Sync`.
 3. `Config-Label_Sync` reads the labels on this repository and rewrites `config/labels.jsonc` so the file matches the repo's current labels.
-4. If that file changed, `Config-Label_Sync` commits and pushes the update.
-5. That config change triggers `Validate-Configs`.
-6. `Org-Label-Sync` then checks out the latest default branch, validates the config again, and syncs labels across the organization.
+4. Any labels that were previously managed but are no longer on the source repository are moved to `config/deleted-labels.jsonc`.
+5. If either config file changed, `Config-Label_Sync` commits and pushes the update.
+6. That config change triggers `Validate-Configs`.
+7. `Org-Label-Sync` then checks out the latest default branch, validates the config again, and syncs labels across the organization.
 
 The reverse flow is:
 
@@ -48,6 +50,7 @@ The reverse flow is:
 |       |-- reverse-config-label-sync.yml
 |       `-- validate-configs.yml
 |-- config/
+|   |-- deleted-labels.jsonc
 |   |-- github-default-labels.jsonc
 |   |-- labels.jsonc
 |   |-- properties.jsonc
@@ -67,6 +70,7 @@ The reverse flow is:
     |-- sync-labels.mjs
     `-- lib/
         |-- changelog-utils.mjs
+        |-- config-validation.mjs
         `-- config-utils.mjs
 ```
 
@@ -133,6 +137,20 @@ Example:
   }
 ]
 ```
+
+### `config/deleted-labels.jsonc`
+
+This is the list of labels that should be deleted from synced repositories.
+
+It is normally maintained automatically by `Config-Label_Sync`. When a label existed in `config/labels.jsonc` and is later removed from the source repository, the last managed label spec is moved here.
+
+Each entry uses the same object shape as `config/labels.jsonc`:
+
+- `name`
+- `color`
+- `description`
+
+`Org-Label-Sync` deletes matching label names from target repositories regardless of color or description. If a label appears again on the source repository, `Config-Label_Sync` removes it from `config/deleted-labels.jsonc` and restores it to `config/labels.jsonc`.
 
 ### `config/github-default-labels.jsonc`
 
@@ -218,8 +236,9 @@ What it does:
 3. Resolves either the configured PAT or a GitHub App installation token
 4. Reads the current labels on the source repository
 5. Rewrites `config/labels.jsonc` so it exactly matches the source repository labels
-6. Validates `config/github-default-labels.jsonc` so exact GitHub default label specs remain well-formed
-7. Commits and pushes the change if the config was updated
+6. Moves any previously managed labels that are missing from the source repository into `config/deleted-labels.jsonc`
+7. Validates `config/github-default-labels.jsonc` so exact GitHub default label specs remain well-formed
+8. Commits and pushes the change if either config file was updated
 
 This workflow is the bridge between "the labels on this repo right now" and "the managed config we sync elsewhere."
 
@@ -242,6 +261,7 @@ Validation includes:
 - JSONC parsing
 - required property checks
 - duplicate label detection
+- deleted-label shape and duplicate-name validation
 - repository filter shape and `useWhitelist` validation
 - duplicate whitelist and blacklist detection
 - invalid colors
@@ -295,9 +315,10 @@ What it does:
 6. Discovers repos in the configured organization
 7. Applies `config/repository-filter.jsonc`, unless `repositories` was provided as a workflow dispatch config override
 8. Creates or updates labels from `config/labels.jsonc`
-9. Deletes labels that exactly match entries in `config/github-default-labels.jsonc` only when the `delete_github_default_labels` workflow checkbox is checked, unless that label name is managed by `config/labels.jsonc`
-10. Optionally deletes any other unmanaged labels only when the `delete_missing` workflow checkbox is checked; exact GitHub default labels are reserved for `delete_github_default_labels`
-11. If at least one target repo changed or would change, writes a changelog and commits it with `[skip ci]`; real runs write to `changelogs/YYYY-MM-DD/`, while preview runs write fake changelogs to `fake-changelogs/YYYY-MM-DD/` and do not apply repository changes
+9. Deletes labels whose names match entries in `config/deleted-labels.jsonc`
+10. Deletes labels that exactly match entries in `config/github-default-labels.jsonc` only when the `delete_github_default_labels` workflow checkbox is checked, unless that label name is managed by `config/labels.jsonc`
+11. Optionally deletes any other unmanaged labels only when the `delete_missing` workflow checkbox is checked; exact GitHub default labels are reserved for `delete_github_default_labels`
+12. If at least one target repo changed or would change, writes a changelog and commits it with `[skip ci]`; real runs write to `changelogs/YYYY-MM-DD/`, while preview runs write fake changelogs to `fake-changelogs/YYYY-MM-DD/` and do not apply repository changes
 
 ### `Remove-Labels`
 
@@ -336,6 +357,7 @@ Each changelog file is created only when a workflow actually changes, or in prev
 
 - created labels
 - updated labels, including changed fields
+- labels deleted by `config/deleted-labels.jsonc`
 - GitHub default labels that were deleted
 - unmanaged labels that were deleted when delete-missing is enabled
 
@@ -363,7 +385,7 @@ That PAT needs enough access to:
 - read and update labels on target repositories
 - read and update labels on the source repository when running `Reverse-Config-Label-Sync`
 - read and update issues and pull requests when running `Remove-Labels`
-- push config updates back to this repository when `Config-Label_Sync` changes `labels.jsonc`
+- push config updates back to this repository when `Config-Label_Sync` changes `labels.jsonc` or `deleted-labels.jsonc`
 - push changelog commits back to this repository when an action changes another repository
 
 For GitHub App auth, create repository secrets whose names match:
@@ -388,6 +410,7 @@ The GitHub App installation must be granted access to this configuration reposit
 ## Safe Defaults
 
 - `labels.jsonc` starts empty until you define or sync labels on this repo
+- `deleted-labels.jsonc` starts empty and is populated when synced labels are removed from the source repository
 - all repos in the org are targeted unless excluded by `repository-filter.jsonc`
 - GitHub default labels are pruned by default when they exactly match `config/github-default-labels.jsonc`; uncheck `delete_github_default_labels` to keep them
 - deleting unmanaged labels is off by default unless you check `delete_missing` when running `Org-Label-Sync`

@@ -8,6 +8,8 @@ import {
   readJsonc,
 } from "./lib/config-utils.mjs";
 import {
+  assertNoManagedDeletedLabelOverlap,
+  validateDeletedLabels,
   validateGithubDefaultLabels,
   validateLabels,
   validateProperties,
@@ -16,6 +18,7 @@ import {
 const workspaceRoot = process.cwd();
 const propertiesPath = path.join(workspaceRoot, "config", "properties.jsonc");
 const labelsPath = path.join(workspaceRoot, "config", "labels.jsonc");
+const deletedLabelsPath = path.join(workspaceRoot, "config", "deleted-labels.jsonc");
 const githubDefaultLabelsPath = path.join(workspaceRoot, "config", "github-default-labels.jsonc");
 
 const validateOnly = process.argv.includes("--validate-only");
@@ -176,12 +179,14 @@ async function main() {
     defaultSourceRepository: process.env.GITHUB_REPOSITORY ?? "",
   });
   const labels = validateLabels(await readJsonc(labelsPath));
+  const deletedLabels = validateDeletedLabels(await readJsonc(deletedLabelsPath));
+  assertNoManagedDeletedLabelOverlap(labels, deletedLabels);
   const githubDefaultLabels = validateGithubDefaultLabels(await readJsonc(githubDefaultLabelsPath));
   const repository = process.env.SOURCE_REPOSITORY ?? properties.sourceRepository;
   assert(repository, "SOURCE_REPOSITORY or properties.sourceRepository is required.");
 
   console.log(
-    `Loaded ${labels.length} managed labels and ${githubDefaultLabels.length} exact GitHub default label specs for ${repository}.`,
+    `Loaded ${labels.length} managed labels, ${deletedLabels.length} deleted labels, and ${githubDefaultLabels.length} exact GitHub default label specs for ${repository}.`,
   );
 
   if (validateOnly) {
