@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+const fakeChangelogFileName = "fake-changelog.md";
+const latestChangelogFileName = "latest-changelog.md";
+const historyDirectoryName = "History";
+
 function slugify(value) {
   return value
     .toLowerCase()
@@ -10,6 +14,10 @@ function slugify(value) {
 
 function formatUtcTimestamp(date) {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function formatDatePath(date) {
+  return date.toISOString().slice(0, 10);
 }
 
 function formatWorkflowRunLink(metadata) {
@@ -26,6 +34,118 @@ function renderList(items, renderItem) {
   }
 
   return items.map((item) => `- ${renderItem(item)}`).join("\n");
+}
+
+function parseGeneratedDate(content, fallbackDate) {
+  const generatedMatch = content.match(/^- Generated: (\d{4}-\d{2}-\d{2})T/m);
+  return generatedMatch?.[1] ?? fallbackDate;
+}
+
+function parseGeneratedTimestamp(content) {
+  return content.match(/^- Generated: ([^\n]+)$/m)?.[1] ?? "";
+}
+
+function parseWorkflowName(content, fallbackFileName) {
+  const titleMatch = content.match(/^# (.+?) Changelog$/m);
+  return slugify(titleMatch?.[1] ?? path.basename(fallbackFileName, ".md"));
+}
+
+async function getNextHistorySequence(historyDir, datePath) {
+  let maxSequence = 0;
+
+  try {
+    const entries = await fs.readdir(historyDir);
+    const sequencePattern = new RegExp(`^${datePath}-(\\d+)-`);
+
+    for (const entry of entries) {
+      const match = entry.match(sequencePattern);
+      if (match) {
+        maxSequence = Math.max(maxSequence, Number.parseInt(match[1], 10));
+      }
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  return maxSequence + 1;
+}
+
+async function getAvailableHistoryPath(historyDir, datePath, workflowSlug) {
+  let sequence = await getNextHistorySequence(historyDir, datePath);
+
+  while (true) {
+    const sequenceText = String(sequence).padStart(3, "0");
+    const historyPath = path.join(historyDir, `${datePath}-${sequenceText}-${workflowSlug}.md`);
+
+    try {
+      await fs.access(historyPath);
+      sequence += 1;
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return historyPath;
+      }
+
+      throw error;
+    }
+  }
+}
+
+async function archiveExistingChangelogs(changelogDir, fallbackDate) {
+  const historyDir = path.join(changelogDir, historyDirectoryName);
+  let entries;
+
+  try {
+    entries = await fs.readdir(changelogDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  }
+
+  const changelogEntries = entries.filter(
+    (entry) =>
+      entry.isFile() &&
+      entry.name.endsWith(".md") &&
+      entry.name !== fakeChangelogFileName &&
+      entry.name !== "README.md",
+  );
+
+  if (changelogEntries.length === 0) {
+    return;
+  }
+
+  await fs.mkdir(historyDir, { recursive: true });
+
+  const changelogs = [];
+
+  for (const entry of changelogEntries) {
+    const sourcePath = path.join(changelogDir, entry.name);
+    const content = await fs.readFile(sourcePath, "utf8");
+    changelogs.push({
+      content,
+      entryName: entry.name,
+      generatedTimestamp: parseGeneratedTimestamp(content),
+      sourcePath,
+    });
+  }
+
+  changelogs.sort(
+    (left, right) =>
+      left.generatedTimestamp.localeCompare(right.generatedTimestamp) || left.entryName.localeCompare(right.entryName),
+  );
+
+  for (const changelog of changelogs) {
+    const datePath = parseGeneratedDate(changelog.content, fallbackDate);
+    const workflowSlug = parseWorkflowName(changelog.content, changelog.entryName);
+    const historyPath = await getAvailableHistoryPath(historyDir, datePath, workflowSlug);
+
+    await fs.rename(changelog.sourcePath, historyPath);
+    console.log(`Archived changelog to ${path.relative(process.cwd(), historyPath)}`);
+  }
 }
 
 export function getWorkflowMetadata(workflowName) {
@@ -50,10 +170,7 @@ export async function writeChangelog({ workflowName, dryRun = false, introLines,
   const now = new Date();
   const metadata = getWorkflowMetadata(workflowName);
   const timestamp = formatUtcTimestamp(now);
-  const runId = metadata.runId || `${Date.now()}`;
-  const fileName = dryRun
-    ? "fake-changelog.md"
-    : `${timestamp.replace(/[:]/g, "").replace(/Z$/, "z")}-${slugify(workflowName)}-${runId}.md`;
+  const fileName = dryRun ? fakeChangelogFileName : latestChangelogFileName;
   const changelogDir = path.join(process.cwd(), "changelogs");
   const changelogPath = path.join(changelogDir, fileName);
 
@@ -77,6 +194,10 @@ export async function writeChangelog({ workflowName, dryRun = false, introLines,
   }
 
   await fs.mkdir(changelogDir, { recursive: true });
+  if (!dryRun) {
+    await archiveExistingChangelogs(changelogDir, formatDatePath(now));
+  }
+
   await fs.writeFile(changelogPath, `${lines.join("\n")}\n`, "utf8");
 
   console.log(`Wrote changelog to ${path.relative(process.cwd(), changelogPath)}`);

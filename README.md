@@ -94,7 +94,7 @@ Inputs:
 
 `label_replacements` is meant for label renames. The old label must exist in `config/deleted-labels.jsonc`, and the new label must exist in `config/labels.jsonc`.
 
-When changes are made, the workflow writes changelogs under `changelogs/`. Dry runs always write to `changelogs/fake-changelog.md`, overwriting the previous dry-run preview.
+When changes are made, the workflow writes the newest real changelog to `changelogs/latest-changelog.md`. Before writing a new real changelog, any existing real changelog directly under `changelogs/` is moved to `changelogs/History/` with a `YYYY-MM-DD-###-workflow-name.md` filename. Dry runs always write to `changelogs/fake-changelog.md`, overwriting the previous dry-run preview.
 
 ### Remove-Labels
 
@@ -110,7 +110,7 @@ Inputs:
 - `label_name`: exact label name to remove
 - `repositories`: comma-separated override for the target repository list
 
-Like `Org-Label-Sync`, real changes and dry-run previews are written to `changelogs/`.
+Like `Org-Label-Sync`, the newest real changelog is written to `changelogs/latest-changelog.md`, older real changelogs are archived in `changelogs/History/`, and dry-run previews are written to `changelogs/fake-changelog.md`.
 
 ### Validate-Configs
 
