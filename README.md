@@ -59,15 +59,15 @@ The configured source repository is always skipped by repository filtering. You 
 
 This repository includes nine GitHub Actions workflows:
 
-- `Config-Label-Sync`
+- `02 - Config-Label-Sync`
 - `Config-Reset`
-- `04 - Distribute-Label-Workflow`
-- `Inventory-Labels`
+- `05 - Distribute-Label-Workflow`
+- `03 - Inventory-Labels`
 - `97 - Label Test`
 - `Validate-Configs`
 - `Reverse-Config-Label-Sync`
-- `Org-Label-Sync`
-- `Remove-Labels`
+- `01 - Org-Label-Sync`
+- `04 - Remove-Labels`
 
 ### Recommended sync flow
 
@@ -174,9 +174,9 @@ Behavior:
 
 For team approval checks, the workflow token must be able to read the configured organization team membership. The same `properties.authentication` setup used by the label sync workflows is used for the reusable Label Test workflow.
 
-### 04 - Distribute-Label-Workflow
+### 05 - Distribute-Label-Workflow
 
-Run `04 - Distribute-Label-Workflow` manually to install or update the caller workflow in selected repositories. It writes `.github/workflows/label-test.yml` in each selected target repository. The generated caller workflow calls back to the repository and default branch that ran the distributor, so forks distribute callers that point to the fork.
+Run `05 - Distribute-Label-Workflow` manually to install or update the caller workflow in selected repositories. It writes `.github/workflows/label-test.yml` in each selected target repository. The generated caller workflow calls back to the repository and default branch that ran the distributor, so forks distribute callers that point to the fork.
 
 Inputs:
 
