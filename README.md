@@ -259,6 +259,8 @@ Both inputs select repositories directly, independently of the configured sync s
 
 Override mode stops before any changes if the receiving repository has a label named `.` or `..`, because those names cannot be safely addressed through the label API's URL path.
 
+Transfers pause at least one second between label writes to reduce GitHub secondary rate limits. When GitHub rejects a request due to rate limiting, the workflow logs the wait and retries up to five times, honoring `Retry-After` and exhausted primary-limit reset headers. Retry waits start at one minute and grow exponentially; GitHub's headers can require a longer pause. A transfer creating 233 labels takes roughly four minutes plus API response time and any rate-limit waits. Permission, validation, and ambiguous network/server errors still stop the run. Rerun a partially completed transfer with the same inputs to finish the remaining changes.
+
 The workflow uses the Org-Label-Sync changelog layout in the GitHub Actions run summary, showing the source and receiving repositories, test and override settings, starting label counts, and created, updated, deleted, and retained counts. Retained labels are existing receiving labels left unchanged. Preview changelogs are marked as test-mode output. If the transfer fails partway through, the summary records completed changes and the failure; rerunning continues from the current label state.
 
 ### Config-Reset
