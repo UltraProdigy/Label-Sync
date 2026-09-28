@@ -259,14 +259,17 @@ function joinWithOr(values) {
   return `${values.slice(0, -1).join(", ")}, or ${values.at(-1)}`;
 }
 
-// Hidden marker used to post the sticky label notice only once per label on each pull request.
-export function stickyLabelCommentMarker(label) {
-  return `<!-- label-sync:sticky-label:${encodeURIComponent(normalizeName(label))} -->`;
+function stickyLabelNoticePrefix(label) {
+  return `The **${label}** label is sticky`;
 }
 
+// The notice is posted only once per label on each pull request. Earlier notices are recognized by their
+// opening text, ignoring case, so changing the configured removers does not cause a second notice.
 export function hasStickyLabelComment(comments, label) {
-  const marker = stickyLabelCommentMarker(label);
-  return (comments ?? []).some((comment) => typeof comment?.body === "string" && comment.body.includes(marker));
+  const prefix = stickyLabelNoticePrefix(label).toLowerCase();
+  return (comments ?? []).some(
+    (comment) => typeof comment?.body === "string" && comment.body.toLowerCase().includes(prefix),
+  );
 }
 
 // Builds one comment for the restored labels that have not been announced on this pull request yet.
@@ -291,10 +294,7 @@ export function buildStickyLabelComment(restorations, comments) {
   }
 
   return pending
-    .map((restoration) => [
-      stickyLabelCommentMarker(restoration.label),
-      `The **${restoration.label}** label is sticky and can only be removed by ${joinWithOr(restoration.removers.map(describeRemover))}.`,
-    ].join("\n"))
+    .map((restoration) => `${stickyLabelNoticePrefix(restoration.label)} and can only be removed by ${joinWithOr(restoration.removers.map(describeRemover))}.`)
     .join("\n\n");
 }
 

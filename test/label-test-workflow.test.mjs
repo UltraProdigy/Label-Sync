@@ -8,7 +8,6 @@ import {
   findStickyLabelsToRestore,
   formatStickyRestoration,
   isIgnoredPullRequestAuthor,
-  stickyLabelCommentMarker,
 } from "../scripts/lib/label-test-workflow.mjs";
 
 const emptyConfig = {
@@ -460,16 +459,26 @@ test("buildStickyLabelComment writes a notice naming the removers without pingin
 
   assert.equal(
     body,
-    `${stickyLabelCommentMarker("Affects Balance")}\n`
-      + "The **Affects Balance** label is sticky and can only be removed by the admin team or UltraProdigy.",
+    "The **Affects Balance** label is sticky and can only be removed by the admin team or UltraProdigy.",
   );
-  assert.doesNotMatch(body, /@/);
+  assert.doesNotMatch(body, /@|<!--/);
 });
 
 test("buildStickyLabelComment only posts the notice for the first removal of each label", () => {
   const previousComments = [
     { body: "Please take a look." },
-    { body: buildStickyLabelComment([{ ...balanceRestoration, label: "affects balance" }], []) },
+    { body: "The **affects balance** label is sticky and can only be removed by someone who has since changed." },
+  ];
+
+  assert.equal(buildStickyLabelComment([balanceRestoration], previousComments), null);
+});
+
+test("buildStickyLabelComment recognizes notices posted with the earlier hidden marker format", () => {
+  const previousComments = [
+    {
+      body: "<!-- label-sync:sticky-label:affects%20balance -->\n"
+        + "The **Affects Balance** label is sticky and can only be removed by the admin team.",
+    },
   ];
 
   assert.equal(buildStickyLabelComment([balanceRestoration], previousComments), null);
@@ -487,12 +496,11 @@ test("buildStickyLabelComment combines new notices and skips labels that were al
   };
   const body = buildStickyLabelComment(
     [balanceRestoration, blocked],
-    [{ body: stickyLabelCommentMarker("Affects Balance") }],
+    [{ body: "The **Affects Balance** label is sticky and can only be removed by the admin team." }],
   );
 
   assert.equal(
     body,
-    `${stickyLabelCommentMarker("Needs Design")}\n`
-      + "The **Needs Design** label is sticky and can only be removed by Lead, the design team, or label-sync-app[bot].",
+    "The **Needs Design** label is sticky and can only be removed by Lead, the design team, or label-sync-app[bot].",
   );
 });
